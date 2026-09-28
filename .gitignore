@@ -39,3 +39,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# database dumps / secrets
+*.sql
+!supabase/migrations/*.sql
+.env*
+
+# supabase CLI cache
+supabase/.temp/
+
+# root duplicate images (canonical copies live in public/images/)
+/Customer Bookings & Pre-orders.png
+/Financial Health & Cashflow.png
+/Marketplace Stall & Product Catalog.png
+/quonnect_logo_transparent.png
