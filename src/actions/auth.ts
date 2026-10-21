@@ -9,6 +9,20 @@ import type { ActionResult, SignupInput } from "@/lib/auth-types";
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const cleanHandle = (value: string) => value.replace(/^@/, "").trim();
 
+function friendlyAuthError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (/fetch failed|failed to fetch|ENOTFOUND|network|ECONNREFUSED|timeout/i.test(message)) {
+    let host = "the configured Supabase project";
+    try {
+      host = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").host || host;
+    } catch {
+      // Keep the generic message.
+    }
+    return `Cannot reach Supabase at ${host}. The project may be paused, deleted, or .env.local is pointing at the wrong URL. Restore the project or update the URL and anon key, then restart the dev server.`;
+  }
+  return message || "Could not reach Supabase";
+}
+
 function normalise(input: SignupInput) {
   return {
     ownerName: input.ownerName.trim(),
@@ -42,26 +56,32 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
   if (!fields.location) return { ok: false, error: "Enter your location" };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: fields.email,
-    password: fields.password,
-    options: {
-      data: {
-        owner_name: fields.ownerName,
-        business_name: fields.businessName,
-        category: fields.category,
-        region: fields.location,
-        phone: fields.phone,
-        motto: fields.motto,
-        instagram: fields.instagram,
-        facebook: fields.facebook,
-        tiktok: fields.tiktok,
-        whatsapp: fields.whatsapp,
+  let signUpResult: Awaited<ReturnType<typeof supabase.auth.signUp>>;
+  try {
+    signUpResult = await supabase.auth.signUp({
+      email: fields.email,
+      password: fields.password,
+      options: {
+        data: {
+          owner_name: fields.ownerName,
+          business_name: fields.businessName,
+          category: fields.category,
+          region: fields.location,
+          phone: fields.phone,
+          motto: fields.motto,
+          instagram: fields.instagram,
+          facebook: fields.facebook,
+          tiktok: fields.tiktok,
+          whatsapp: fields.whatsapp,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    return { ok: false, error: friendlyAuthError(error) };
+  }
 
-  if (error) return { ok: false, error: error.message };
+  const { data, error } = signUpResult;
+  if (error) return { ok: false, error: friendlyAuthError(error) };
   if (!data.user) return { ok: false, error: "Could not create your account" };
 
   if (!data.session) {
@@ -102,16 +122,22 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
 
 export async function signInAction(email: string, password: string): Promise<ActionResult> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
+  let signInResult: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+  try {
+    signInResult = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+  } catch (error) {
+    return { ok: false, error: friendlyAuthError(error) };
+  }
 
+  const { data, error } = signInResult;
   if (error) {
     if (error.message.toLowerCase().includes("email not confirmed")) {
       return { ok: false, error: "Confirm your email first, then log in" };
     }
-    return { ok: false, error: "Wrong email or password" };
+    return { ok: false, error: friendlyAuthError(error) };
   }
   if (data.user) await ensureVendorProfile(supabase, data.user);
   return { ok: true };
@@ -128,7 +154,11 @@ export async function requestPasswordReset(email: string): Promise<ActionResult>
     return { ok: false, error: "Enter your email first, then tap Forgot password" };
   }
   const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+    if (error) return { ok: false, error: friendlyAuthError(error) };
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: friendlyAuthError(error) };
+  }
 }

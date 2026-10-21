@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "test:acceptance": "tsx scripts/acceptance-tests.ts",
-    "test:unit": "tsx scripts/unit-tests.ts"
+    "test:unit": "tsx scripts/unit-tests.ts",
+    "check:supabase": "tsx scripts/check-supabase.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

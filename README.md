@@ -21,6 +21,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
 
+If login or signup shows **"Cannot reach Supabase"**, run:
+
+```bash
+npm run check:supabase
+```
+
+The current `.env.local` points at `akfktjvckvlfclkwjppn.supabase.co`, which does not resolve.
+Restore/create the project, copy its URL plus anon key into `.env.local`, restart `npm run dev`,
+then apply the migrations and regenerate types.
+
 ## Supabase setup
 
 The project must have the migrations in `supabase/migrations/` applied:
@@ -45,6 +55,7 @@ Migration order:
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Next dev server |
+| `npm run check:supabase` | Check DNS and HTTP reachability of the configured Supabase project |
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
