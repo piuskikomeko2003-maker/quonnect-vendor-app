@@ -12,6 +12,7 @@ Environment: macOS, Next.js 16.3.5, Supabase project `akfktjvckvlfclkwjppn` (unr
 | `npm run lint` | PASS (0 errors, 0 warnings) |
 | `npm run build` | PASS |
 | Playwright 430px screenshots, all screens | PASS, 0 console errors |
+| Signup 3-step navigation (Account → Business → Social) | PASS, 0 console errors |
 | Visual review vs `quonnect-vendor-app.html` | PASS after fixes (header, headings, chip icon layout, auth hero, chart date labels, receipt) |
 | `npm run test:unit` | PASS (7 tests: money, axes, discount, range cap, WhatsApp, receipt text) |
 | `npm run test:acceptance` | BLOCKED — project DNS `NXDOMAIN`; no `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` |
