@@ -55,8 +55,8 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
         </defs>
         {grid.map((line) => (
           <g key={line.value}>
-            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E4ECE7" />
-            <text x={L - 6} y={line.y + 3} textAnchor="end" fontSize="7.5" fill="#6B7F7A">
+            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E2ECE7" strokeWidth="1" />
+            <text x={L - 6} y={line.y + 3} textAnchor="end" fontSize="7.5" fill="#546A63" fontWeight="500">
               UGX {formatNumber(line.value)}
             </text>
           </g>
@@ -75,7 +75,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
                 width={barWidth}
                 height={barHeight}
                 rx={Math.min(5, barWidth / 2)}
-                fill={value < 0 ? "#EF4444" : "url(#profit-grad)"}
+                fill={value < 0 ? "#DC2626" : "url(#profit-grad)"}
               />
               {few ? (
                 <text
@@ -84,17 +84,17 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
                   textAnchor="middle"
                   fontSize="7.5"
                   fontWeight="700"
-                  fill="#10241F"
+                  fill="#0D1A16"
                 >
                   UGX {shortMoney(value)}
                 </text>
               ) : null}
               {few ? (
                 <>
-                  <text x={centerX} y={height - B + 16} textAnchor="middle" fontSize="9" fill="#6B7F7A">
+                  <text x={centerX} y={height - B + 16} textAnchor="middle" fontSize="9" fill="#546A63" fontWeight="500">
                     {monthDayLabel(days[index])}
                   </text>
-                  <text x={centerX} y={height - B + 28} textAnchor="middle" fontSize="9" fill="#6B7F7A">
+                  <text x={centerX} y={height - B + 28} textAnchor="middle" fontSize="9" fill="#546A63" fontWeight="500">
                     {weekdayLabel(days[index])}
                   </text>
                 </>
@@ -104,7 +104,8 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
                   y={height - B + 16}
                   textAnchor={index === count - 1 ? "end" : "middle"}
                   fontSize="9"
-                  fill="#6B7F7A"
+                  fill="#546A63"
+                  fontWeight="500"
                 >
                   {monthDayLabel(days[index])}
                 </text>

@@ -27,8 +27,11 @@ export function TabBar() {
             className={active ? "on" : ""}
             aria-current={active ? "page" : undefined}
           >
-            <Icon name={tab.icon} size={22} />
+            <div className="tabbar-icon-wrap">
+              <Icon name={tab.icon} size={20} />
+            </div>
             <span>{tab.label}</span>
+            {active && <span className="tabbar-indicator" />}
           </Link>
         );
       })}

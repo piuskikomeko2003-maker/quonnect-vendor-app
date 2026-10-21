@@ -46,8 +46,8 @@ export function BarChart({
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={ariaLabel}>
         {grid.map((line) => (
           <g key={line.value}>
-            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E3ECEA" />
-            <text x={L - 6} y={line.y + 3.5} textAnchor="end" fontSize="9.5" fill="#6B7F7A">
+            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E2ECE7" strokeWidth="1" />
+            <text x={L - 6} y={line.y + 3.5} textAnchor="end" fontSize="9.5" fill="#546A63" fontWeight="500">
               {shortMoney(line.value)}
             </text>
           </g>
@@ -76,7 +76,8 @@ export function BarChart({
                 y={height - B + 15}
                 textAnchor="middle"
                 fontSize="9.5"
-                fill="#6B7F7A"
+                fill="#546A63"
+                fontWeight="500"
               >
                 {label.length > 9 ? `${label.slice(0, 8)}…` : label}
               </text>

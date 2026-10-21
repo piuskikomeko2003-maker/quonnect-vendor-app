@@ -104,6 +104,11 @@ button {
   cursor: pointer;
   border: 0;
   background: none;
+  transition: transform var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 a {
@@ -162,6 +167,21 @@ a {
 
 .app-main::-webkit-scrollbar {
   display: none;
+}
+
+@keyframes page-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.app-main > * {
+  animation: page-fade-slide var(--duration-normal) var(--ease-out) backwards;
 }
 
 /* ---------- Header ---------- */
@@ -315,8 +335,34 @@ a {
   gap: 3px;
   text-decoration: none;
   min-height: 44px;
+  position: relative;
   border-radius: var(--radius-sm);
   transition: color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.tabbar a .tabbar-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.tabbar a.on .tabbar-icon-wrap {
+  background: var(--mint);
+  color: var(--accent);
+}
+
+.tabbar a .tabbar-indicator {
+  position: absolute;
+  bottom: 0;
+  width: 14px;
+  height: 2.5px;
+  background: var(--accent);
+  border-radius: var(--radius-full);
 }
 
 .tabbar a svg {
@@ -335,6 +381,14 @@ a {
 
 .tabbar a.on svg {
   transform: translateY(-1px);
+}
+
+.stall-avatar {
+  width: 50px;
+  height: 50px;
+  font-size: 16px;
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
 }
 
 /* ---------- Floating Action Button ---------- */
@@ -1030,6 +1084,34 @@ dialog.sheet {
   overflow: visible;
 }
 
+dialog.sheet[open] {
+  animation: sheet-fade var(--duration-fast) var(--ease-out);
+}
+
+dialog.sheet[open] .sheet-inner {
+  animation: sheet-slide-up var(--duration-normal) var(--ease-out);
+}
+
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 dialog.sheet::backdrop {
   background: rgba(10, 26, 20, 0.5);
   backdrop-filter: blur(4px);
@@ -1115,7 +1197,7 @@ dialog.sheet::backdrop {
   transform: translateX(-50%) translateY(-10px);
   background: #0f1d19;
   color: #fff;
-  padding: 9px 16px;
+  padding: 8px 16px;
   border-radius: var(--radius-full);
   font-size: 12px;
   font-weight: 500;
@@ -1129,11 +1211,23 @@ dialog.sheet::backdrop {
   text-overflow: ellipsis;
   box-shadow: var(--shadow-lg);
   border: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.toast-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
+  flex-shrink: 0;
 }
 
 /* ---------- Home Screen Components ---------- */

@@ -68,8 +68,8 @@ export function LineChart({
       <svg viewBox={`0 0 ${width} ${H}`} width="100%" role="img" aria-label={ariaLabel}>
         {grid.map((line) => (
           <g key={line.value}>
-            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E3ECEA" />
-            <text x={L - 6} y={line.y + 3.5} textAnchor="end" fontSize="9.5" fill="#6B7F7A">
+            <line x1={L} x2={width - R} y1={line.y} y2={line.y} stroke="#E2ECE7" strokeWidth="1" />
+            <text x={L - 6} y={line.y + 3.5} textAnchor="end" fontSize="9.5" fill="#546A63" fontWeight="500">
               {shortMoney(line.value)}
             </text>
           </g>
@@ -80,7 +80,8 @@ export function LineChart({
             x2={width - R}
             y1={y(0)}
             y2={y(0)}
-            stroke="#9FB3AE"
+            stroke="#94A8A0"
+            strokeWidth="1.2"
           />
         ) : null}
         {labels.map((label, index) =>
@@ -91,7 +92,8 @@ export function LineChart({
               y={H - 8}
               textAnchor="middle"
               fontSize="9.5"
-              fill="#6B7F7A"
+              fill="#546A63"
+              fontWeight="500"
             >
               {label}
             </text>
@@ -132,8 +134,8 @@ export function LineChart({
           x2={x(clampedActive)}
           y1={T}
           y2={T + innerHeight}
-          stroke="#10241F"
-          strokeOpacity=".28"
+          stroke="#0D1A16"
+          strokeOpacity=".35"
           strokeDasharray="3 3"
         />
         {labels.map((label, index) => {
