@@ -29,7 +29,7 @@ function metadataOf(user: User): SignupMetadata {
 export async function ensureVendorProfile(
   supabase: Client,
   user: User,
-): Promise<{ vendor: Vendor | null; stall: Stall | null }> {
+): Promise<{ vendor: Vendor | null; stall: Stall | null; error?: string }> {
   const meta = metadataOf(user);
 
   const { data: existing } = await supabase
@@ -64,7 +64,7 @@ export async function ensureVendorProfile(
       .single();
     if (error) {
       console.error("Could not create vendor profile:", error.message);
-      return { vendor: null, stall: null };
+      return { vendor: null, stall: null, error: error.message };
     }
     vendor = data;
   } else if (!vendor.owner_name && meta.owner_name) {

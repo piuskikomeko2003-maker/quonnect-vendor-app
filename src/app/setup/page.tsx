@@ -1,29 +1,74 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AuthHero } from "@/components/auth/AuthHero";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { getSetupStatus } from "@/lib/setup-status";
 
 export const metadata = { title: "Finish setup · Quonnect Vendor" };
 
-export default function SetupPage() {
+export default async function SetupPage() {
+  const status = await getSetupStatus();
+  if (!status) redirect("/login");
+  if (status.repaired) redirect("/home");
+
   return (
     <div className="auth-shell">
       <AuthHero
-        title="We could not open your stall"
-        subtitle="Your account is signed in, but its vendor profile is missing."
+        title="Finish your database setup"
+        subtitle={
+          status.email
+            ? `Signed in as ${status.email}, but the vendor profile could not be created.`
+            : "Signed in, but the vendor profile could not be created."
+        }
       />
       <div className="authbody">
         <div className="card">
-          <p style={{ fontSize: 13.5, lineHeight: 1.5 }}>
-            This usually means the database migrations have not been applied to this Supabase
-            project yet. Run the migrations, then try again. If you are not the project owner,
-            send this message to your administrator.
-          </p>
-          <Link className="btn" href="/home" style={{ marginTop: 14 }}>
-            Try again
+          {status.missing.length ? (
+            <>
+              <p style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+                These parts of the schema are still missing:
+              </p>
+              <ul style={{ margin: "10px 0 0 18px", fontSize: 12.5, lineHeight: 1.8 }}>
+                {status.missing.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 12, color: "var(--mut)" }}>
+                Apply the migrations, then tap Check again. If you cannot use the Supabase CLI,
+                paste <code>supabase/APPLY_ON_DASHBOARD.sql</code> into the Supabase SQL Editor.
+              </p>
+            </>
+          ) : (
+            <p style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+              The tables are present, but creating the vendor profile was blocked. This is usually
+              an RLS policy or a missing migration on <code>vendors</code>.
+            </p>
+          )}
+          {status.repairError ? (
+            <div className="ro" style={{ fontSize: 11.5 }}>
+              <b>Database says:</b> {status.repairError}
+            </div>
+          ) : null}
+          <Link className="btn" href="/setup" style={{ marginTop: 14 }}>
+            Check again
           </Link>
           <div style={{ marginTop: 8 }}>
             <SignOutButton />
           </div>
+        </div>
+        <div className="card">
+          <h3>Apply the schema</h3>
+          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--mut)" }}>
+            Recommended:
+          </p>
+          <pre style={{ fontSize: 11, background: "var(--bg)", padding: 10, borderRadius: 10, overflowX: "auto" }}>
+{`npx supabase link --project-ref <ref>
+npx supabase db push`}
+          </pre>
+          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--mut)", marginTop: 8 }}>
+            Dashboard fallback: SQL Editor → paste
+            <b> supabase/APPLY_ON_DASHBOARD.sql</b> → Run.
+          </p>
         </div>
       </div>
     </div>
