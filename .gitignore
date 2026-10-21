@@ -43,6 +43,7 @@ next-env.d.ts
 # database dumps / secrets
 *.sql
 !supabase/migrations/*.sql
+!supabase/APPLY_ON_DASHBOARD.sql
 .env*
 
 # supabase CLI cache
