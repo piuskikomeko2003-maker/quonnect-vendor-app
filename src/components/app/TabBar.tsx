@@ -16,14 +16,17 @@ const TABS: { href: string; label: string; icon: IconKey }[] = [
 
 export function TabBar() {
   const pathname = usePathname();
+  const isPreview = pathname.startsWith("/preview/");
+
   return (
     <nav className="tabbar" aria-label="Main navigation">
       {TABS.map((tab) => {
+        const targetHref = isPreview ? `/preview${tab.href}` : tab.href;
         const active = pathname === tab.href || pathname === `/preview${tab.href}`;
         return (
           <Link
             key={tab.href}
-            href={tab.href}
+            href={targetHref}
             className={active ? "on" : ""}
             aria-current={active ? "page" : undefined}
           >

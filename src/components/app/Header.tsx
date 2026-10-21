@@ -23,7 +23,8 @@ const TITLES: Record<string, [string, string]> = {
 
 export function Header({ ownerName, businessName, logoUrl }: HeaderProps) {
   const pathname = usePathname();
-  const path = pathname.startsWith("/preview/") ? pathname.slice("/preview".length) : pathname;
+  const isPreview = pathname.startsWith("/preview/");
+  const path = isPreview ? pathname.slice("/preview".length) : pathname;
   const entry = TITLES[path] ?? TITLES["/home"];
   const title = path === "/home" ? `Hello, ${firstName(ownerName)}` : entry[0];
 
@@ -39,7 +40,11 @@ export function Header({ ownerName, businessName, logoUrl }: HeaderProps) {
             <span className="dot" />
             <span>Synced</span>
           </div>
-          <Link href="/profile" aria-label="Open profile" style={{ display: "flex" }}>
+          <Link
+            href={isPreview ? "/preview/profile" : "/profile"}
+            aria-label="Open profile"
+            style={{ display: "flex" }}
+          >
             <Avatar logoUrl={logoUrl} name={businessName} size="header" />
           </Link>
         </div>
