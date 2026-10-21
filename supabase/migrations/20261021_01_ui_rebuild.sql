@@ -802,6 +802,8 @@ DECLARE
   v_dom integer;
   v_sales_today numeric := 0;
   v_sales_yesterday numeric := 0;
+  v_net_today numeric := 0;
+  v_net_yesterday numeric := 0;
   v_expenses_today numeric := 0;
   v_expenses_yesterday numeric := 0;
   v_net_month numeric := 0;
@@ -832,6 +834,18 @@ BEGIN
 
   SELECT COALESCE(SUM(amount), 0) INTO v_expenses_yesterday
   FROM public.finance_entries WHERE vendor_id = p_vendor_id AND type = 'expense' AND entry_date = v_yesterday;
+
+  SELECT
+    COALESCE((SELECT SUM(profit) FROM public.sales WHERE vendor_id = p_vendor_id AND sale_date = v_today AND deleted_at IS NULL), 0)
+    + COALESCE((SELECT SUM(amount) FROM public.finance_entries WHERE vendor_id = p_vendor_id AND type = 'income' AND entry_date = v_today), 0)
+    - COALESCE((SELECT SUM(amount) FROM public.finance_entries WHERE vendor_id = p_vendor_id AND type = 'expense' AND category <> 'Stock purchase' AND entry_date = v_today), 0)
+  INTO v_net_today;
+
+  SELECT
+    COALESCE((SELECT SUM(profit) FROM public.sales WHERE vendor_id = p_vendor_id AND sale_date = v_yesterday AND deleted_at IS NULL), 0)
+    + COALESCE((SELECT SUM(amount) FROM public.finance_entries WHERE vendor_id = p_vendor_id AND type = 'income' AND entry_date = v_yesterday), 0)
+    - COALESCE((SELECT SUM(amount) FROM public.finance_entries WHERE vendor_id = p_vendor_id AND type = 'expense' AND category <> 'Stock purchase' AND entry_date = v_yesterday), 0)
+  INTO v_net_yesterday;
 
   SELECT COALESCE(SUM(total), 0) INTO v_sales
   FROM public.sales
@@ -922,6 +936,8 @@ BEGIN
     'selected_month', v_selected,
     'sales_today', v_sales_today,
     'sales_yesterday', v_sales_yesterday,
+    'net_today', v_net_today,
+    'net_yesterday', v_net_yesterday,
     'expenses_today', v_expenses_today,
     'expenses_yesterday', v_expenses_yesterday,
     'net_month', v_net_month,

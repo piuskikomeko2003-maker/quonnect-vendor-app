@@ -1,46 +1,43 @@
-import Link from "next/link";
+import { HomeScreen } from "@/components/screens/HomeScreen";
 import { requireVendor } from "@/lib/auth";
+import { loadHome } from "@/lib/data";
+import { addDays, clampDateRange, currentMonthKey, monthList, todayKey } from "@/lib/format";
 
-export default async function HomePage() {
-  const { vendor } = await requireVendor();
+export const metadata = { title: "Home · Quonnect Vendor" };
 
-  return (
-    <>
-      <div className="hgrid">
-        <div className="sc hl">
-          <div className="t">
-            <span>Sales today</span>
-          </div>
-          <b className="v">UGX 0</b>
-          <span className="tr">&nbsp;</span>
-        </div>
-        <div className="sc">
-          <div className="t">
-            <span>Spent today</span>
-          </div>
-          <b className="v">UGX 0</b>
-          <span className="tr">&nbsp;</span>
-        </div>
-        <div className="sc">
-          <div className="t">
-            <span>Net this month</span>
-          </div>
-          <b className="v">UGX 0</b>
-          <span className="tr">&nbsp;</span>
-        </div>
-      </div>
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-      <div className="card">
-        <div className="ch">
-          <div>
-            <div className="ct">Welcome, {vendor.business_name}</div>
-            <small>Your dashboard is being prepared.</small>
-          </div>
-        </div>
-        <Link className="btn" href="/sell">
-          Record a sale
-        </Link>
-      </div>
-    </>
-  );
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function HomePage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const { supabase, vendor } = await requireVendor();
+  const today = todayKey();
+
+  const requestedRange = one(params.range);
+  const range = requestedRange === "30d" || requestedRange === "custom" ? requestedRange : "7d";
+  let from = range === "30d" ? addDays(today, -29) : addDays(today, -6);
+  let to = today;
+
+  if (range === "custom") {
+    const rawFrom = one(params.from);
+    const rawTo = one(params.to);
+    const valid = (value?: string) => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+    const start = valid(rawFrom) ? rawFrom! : addDays(today, -13);
+    const end = valid(rawTo) && rawTo! <= today ? rawTo! : today;
+    const clamped = clampDateRange(start, end, 60);
+    from = clamped.from;
+    to = clamped.to;
+  }
+
+  const requestedMonth = one(params.month);
+  const month = requestedMonth && monthList(12).includes(requestedMonth)
+    ? requestedMonth
+    : currentMonthKey();
+
+  const data = await loadHome(supabase, vendor.id, month, from, to);
+
+  return <HomeScreen data={data} month={month} range={range} from={from} to={to} />;
 }

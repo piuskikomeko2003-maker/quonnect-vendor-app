@@ -47,6 +47,8 @@ export async function loadHome(
       selected_month: month,
       sales_today: 0,
       sales_yesterday: 0,
+      net_today: 0,
+      net_yesterday: 0,
       expenses_today: 0,
       expenses_yesterday: 0,
       net_month: 0,

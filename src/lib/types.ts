@@ -64,6 +64,8 @@ export interface HomeOverview {
   selected_month: string;
   sales_today: number;
   sales_yesterday: number;
+  net_today: number;
+  net_yesterday: number;
   expenses_today: number;
   expenses_yesterday: number;
   net_month: number;
