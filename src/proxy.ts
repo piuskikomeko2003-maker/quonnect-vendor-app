@@ -16,8 +16,9 @@ export async function proxy(request: NextRequest) {
   const { response, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
   const isAuthRoute = AUTH_ROUTES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  const isPreview = pathname.startsWith("/preview");
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPreview) {
     return redirectWithCookies(request, "/login", response);
   }
 

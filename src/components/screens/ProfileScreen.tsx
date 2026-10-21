@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOutAction } from "@/actions/auth";
-import { changePasswordAction, updateProfileAction } from "@/actions/settings";
+import { changePasswordAction, updateLogoAction, updateProfileAction } from "@/actions/settings";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
@@ -67,23 +67,13 @@ export function ProfileScreen({ data }: { data: ProfileData }) {
       } else {
         setLogoUrl(result.url);
         if (!editing) {
-          await updateProfileAction({
-            owner_name: vendor.owner_name ?? "",
-            business_name: vendor.business_name,
-            phone: vendor.phone ?? "",
-            phone2: vendor.phone2 ?? "",
-            email: vendor.email ?? "",
-            category: vendor.category ?? "",
-            location: vendor.region ?? "",
-            motto: vendor.motto ?? "",
-            instagram: vendor.instagram ?? "",
-            facebook: vendor.facebook ?? "",
-            tiktok: vendor.tiktok ?? "",
-            whatsapp: vendor.whatsapp ?? "",
-            logo_url: result.url,
-          });
-          toast("Logo updated");
-          router.refresh();
+          const saved = await updateLogoAction(result.url);
+          if (!saved.ok) {
+            toast(saved.error ?? "Could not save logo");
+          } else {
+            toast("Logo updated");
+            router.refresh();
+          }
         }
       }
     } catch {

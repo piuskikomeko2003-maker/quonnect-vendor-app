@@ -71,10 +71,6 @@ CREATE POLICY "Vendors manage products" ON public.products
   USING (EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = products.vendor_id AND v.user_id = auth.uid()))
   WITH CHECK (EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = products.vendor_id AND v.user_id = auth.uid()));
 
-DROP POLICY IF EXISTS "Public reads published products" ON public.products;
-CREATE POLICY "Public reads published products" ON public.products
-  FOR SELECT USING (is_active = true);
-
 DROP POLICY IF EXISTS "Vendors manage finance entries" ON public.finance_entries;
 CREATE POLICY "Vendors manage finance entries" ON public.finance_entries
   FOR ALL

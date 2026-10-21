@@ -12,11 +12,12 @@ import { useToast } from "@/components/ui/Toast";
 import {
   addDays,
   clampDateRange,
-  dayMonthLabel,
-  formatDay,
+  monthDayLabel,
+  usDayLabel,
   formatUGX,
   monthList,
   monthLongYear,
+  monthShort,
   todayKey,
 } from "@/lib/format";
 import type { HomeData, LowStockProduct, Transaction } from "@/lib/types";
@@ -70,7 +71,7 @@ function transactionIcon(transaction: Transaction): IconKey {
 }
 
 function transactionSubtitle(transaction: Transaction): string {
-  const date = formatDay(transaction.date);
+  const date = usDayLabel(transaction.date);
   const time = transaction.ts
     ? new Date(transaction.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
     : "";
@@ -85,20 +86,26 @@ function TransactionRows({ transactions }: { transactions: Transaction[] }) {
   if (!transactions.length) return <div className="empty">No transactions yet</div>;
   return (
     <>
-      {transactions.map((transaction) => (
+      {transactions.map((transaction) => {
+        const title =
+          transaction.kind === "sale" && transaction.items?.length
+            ? `Sales – ${transaction.items.slice(0, 2).join(", ")}`
+            : transaction.title;
+        return (
         <div className="tx" key={`${transaction.kind}-${transaction.id}`}>
           <div className="ci sm">
             <Icon name={transactionIcon(transaction)} size={18} />
           </div>
           <div className="grow">
-            <b className="l">{transaction.title}</b>
+            <b className="l">{title}</b>
             <small>{transactionSubtitle(transaction)}</small>
           </div>
           <b className={`a ${transaction.amount >= 0 ? "pos" : "neg"}`}>
             {transaction.amount >= 0 ? "+" : "−"} {formatUGX(Math.abs(transaction.amount))}
           </b>
         </div>
-      ))}
+        );
+      })}
     </>
   );
 }
@@ -109,12 +116,14 @@ export function HomeScreen({
   range,
   from,
   to,
+  basePath = "/home",
 }: {
   data: HomeData;
   month: string;
   range: HomeRange;
   from: string;
   to: string;
+  basePath?: string;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -139,11 +148,11 @@ export function HomeScreen({
     if (next === "custom") {
       const defaults = from && to ? { from, to } : { from: addDays(todayKey(), -13), to: todayKey() };
       const search = new URLSearchParams({ month, range: "custom", ...defaults });
-      router.push(`/home?${search.toString()}`);
+      router.push(`${basePath}?${search.toString()}`);
       return;
     }
     const search = new URLSearchParams({ month, range: next });
-    router.push(`/home?${search.toString()}`);
+    router.push(`${basePath}?${search.toString()}`);
   }
 
   function applyCustomDates(nextFrom: string, nextTo: string) {
@@ -157,7 +166,7 @@ export function HomeScreen({
       from: clamped.from,
       to: clamped.to,
     });
-    router.push(`/home?${search.toString()}`);
+    router.push(`${basePath}?${search.toString()}`);
   }
 
   async function doRestock() {
@@ -186,7 +195,7 @@ export function HomeScreen({
       ? "Your daily net profit for the last 7 days"
       : range === "30d"
         ? "Your daily net profit for the last 30 days"
-        : `Daily net profit, ${dayMonthLabel(from)} to ${dayMonthLabel(to)}`;
+        : `Daily net profit, ${monthDayLabel(from)} to ${monthDayLabel(to)}`;
 
   return (
     <>
@@ -245,7 +254,7 @@ export function HomeScreen({
             <div className="ct">
               This month{" "}
               <span className="pill">
-                {monthLongYear(month).split(" ")[0]} {month.slice(0, 4)}
+                {monthShort(`${month}-01`)} {month.slice(0, 4)}
               </span>
             </div>
             <small>
@@ -266,7 +275,7 @@ export function HomeScreen({
                   search.set("from", from);
                   search.set("to", to);
                 }
-                router.push(`/home?month=${event.target.value}&${search.toString()}`);
+                router.push(`${basePath}?month=${event.target.value}&${search.toString()}`);
               }}
             >
               {monthOptions.map((option) => (

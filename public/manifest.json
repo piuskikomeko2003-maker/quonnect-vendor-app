@@ -1,11 +1,11 @@
 {
   "name": "Quonnect Vendor",
   "short_name": "Quonnect",
-  "description": "Mobile-first POS, product catalog, customer debts, and financial reports for market vendors.",
+  "description": "Run your market stall: stock, sales, money, analytics and your online stall.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#0d9488",
+  "background_color": "#D3E8DC",
+  "theme_color": "#0F8A4D",
   "icons": [
     {
       "src": "/quonnect_logo_transparent.png",

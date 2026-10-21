@@ -74,9 +74,6 @@ export function LoginForm() {
           </div>
         </form>
       </div>
-      <p style={{ textAlign: "center", fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>
-        Use the email address you signed up with.
-      </p>
     </div>
   );
 }

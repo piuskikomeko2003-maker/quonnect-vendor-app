@@ -119,9 +119,13 @@ CREATE POLICY "Vendors manage budgets" ON public.budgets
   USING (EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = budgets.vendor_id AND v.user_id = auth.uid()))
   WITH CHECK (EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = budgets.vendor_id AND v.user_id = auth.uid()));
 
+-- The customer preview is rendered from the owner's session, not from a
+-- public marketplace query. Keep products strictly vendor-scoped.
 DROP POLICY IF EXISTS "Public reads published products" ON public.products;
-CREATE POLICY "Public reads published products" ON public.products
-  FOR SELECT USING (is_active = true AND deleted_at IS NULL);
+DROP POLICY IF EXISTS "Public read products" ON public.products;
+DROP POLICY IF EXISTS "Public can view active products" ON public.products;
+DROP POLICY IF EXISTS "Anyone can view active products" ON public.products;
+DROP POLICY IF EXISTS "Public read active products" ON public.products;
 
 -- --------------------------------------------------------------------
 -- 6. Stalls for every vendor + updated_at helpers

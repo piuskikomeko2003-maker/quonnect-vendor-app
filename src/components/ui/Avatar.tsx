@@ -3,13 +3,13 @@ import { initials } from "@/lib/format";
 interface AvatarProps {
   logoUrl?: string | null;
   name?: string | null;
-  size?: "header" | "normal" | "big";
+  size?: "header" | "normal" | "big" | "stall";
   className?: string;
 }
 
 export function Avatar({ logoUrl, name, size = "normal", className = "" }: AvatarProps) {
   const sizeClass =
-    size === "header" ? "header-avatar" : size === "big" ? "bigav" : "";
+    size === "header" ? "header-avatar" : size === "big" ? "bigav" : size === "stall" ? "stall-avatar" : "";
   return (
     <span className={`av ${sizeClass} ${className}`.trim()} aria-hidden={!name}>
       {logoUrl ? (

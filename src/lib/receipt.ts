@@ -269,10 +269,14 @@ export async function buildReceipt(
       align: "center",
     });
   }
-  socials.forEach((line, index) => {
+  for (let index = 0; index < socials.length; index += 2) {
     y += index === 0 ? 42 : 32;
-    text(line, width / 2, y, { size: 19, color: "#3F5953", align: "center" });
-  });
+    text(socials.slice(index, index + 2).join("   ·   "), width / 2, y, {
+      size: 19,
+      color: "#3F5953",
+      align: "center",
+    });
+  }
   y += 56;
   text("Made with Quonnect Vendor", width / 2, y, { size: 17, color: "#9FB3AE", align: "center" });
 

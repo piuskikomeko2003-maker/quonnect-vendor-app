@@ -16,8 +16,10 @@ export async function updateStallAction(input: StallInput): Promise<SimpleResult
   const [stallResult, vendorResult] = await Promise.all([
     supabase
       .from("stalls")
-      .update({ name, tagline, accent_color: accent })
-      .eq("vendor_id", vendor.id),
+      .upsert(
+        { vendor_id: vendor.id, name, tagline, accent_color: accent },
+        { onConflict: "vendor_id" },
+      ),
     supabase
       .from("vendors")
       .update({ business_name: name, motto: tagline })
@@ -65,13 +67,14 @@ export async function updateProfileAction(input: ProfileInput): Promise<SimpleRe
 
   if (error) return { ok: false, error: error.message };
 
-  await supabase
-    .from("stalls")
-    .update({
+  await supabase.from("stalls").upsert(
+    {
+      vendor_id: vendor.id,
       name: input.business_name.trim(),
       tagline: input.motto.trim(),
-    })
-    .eq("vendor_id", vendor.id);
+    },
+    { onConflict: "vendor_id" },
+  );
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -95,5 +98,16 @@ export async function changePasswordAction(
 
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateLogoAction(logoUrl: string | null): Promise<SimpleResult> {
+  const { supabase, vendor } = await requireVendor();
+  const { error } = await supabase
+    .from("vendors")
+    .update({ logo_url: logoUrl })
+    .eq("id", vendor.id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/", "layout");
   return { ok: true };
 }

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { niceStep } from "@/lib/chart";
 import {
-  dayMonthLabel,
   formatNumber,
   formatUGX,
+  monthDayLabel,
   shortMoney,
   weekdayLabel,
 } from "@/lib/format";
@@ -92,7 +92,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
               {few ? (
                 <>
                   <text x={centerX} y={height - B + 16} textAnchor="middle" fontSize="9" fill="#6B7F7A">
-                    {dayMonthLabel(days[index])}
+                    {monthDayLabel(days[index])}
                   </text>
                   <text x={centerX} y={height - B + 28} textAnchor="middle" fontSize="9" fill="#6B7F7A">
                     {weekdayLabel(days[index])}
@@ -106,7 +106,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
                   fontSize="9"
                   fill="#6B7F7A"
                 >
-                  {dayMonthLabel(days[index])}
+                  {monthDayLabel(days[index])}
                 </text>
               ) : null}
               <rect
@@ -118,7 +118,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
                 style={{ cursor: "pointer" }}
                 tabIndex={0}
                 role="button"
-                aria-label={`Show ${dayMonthLabel(days[index])}`}
+                aria-label={`Show ${monthDayLabel(days[index])}`}
                 onClick={() => setActive(index)}
                 onMouseEnter={() => setActive(index)}
                 onFocus={() => setActive(index)}
@@ -130,7 +130,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
       {!few ? (
         <div className="chart-ro" id="ro_hb">
           <b>
-            {dayMonthLabel(days[current])} ({weekdayLabel(days[current])})
+            {monthDayLabel(days[current])} ({weekdayLabel(days[current])})
           </b>
           <span>
             <i className="dotc" style={{ background: "#0F8A4D" }} />

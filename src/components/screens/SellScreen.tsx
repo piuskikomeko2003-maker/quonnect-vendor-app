@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { formatDay, formatUGX, todayKey } from "@/lib/format";
-import { effectivePrice } from "@/lib/product";
+import { effectivePrice, productIcon } from "@/lib/product";
 import {
   buildReceipt,
   downloadCanvas,
@@ -202,7 +202,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
               // eslint-disable-next-line @next/next/no-img-element
               <img src={product.photo_url} alt="" />
             ) : (
-              <Icon name="box" size={18} />
+              <Icon name={productIcon(product)} size={18} />
             )}{" "}
             {product.name}
             <small>
@@ -291,7 +291,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
               <div className="row" key={sale.id}>
                 <div className="grow">
                   <b>{formatUGX(sale.total)}</b>
-                  <small>{formatDay(sale.sale_date)}</small>
+                  <small>{sale.sale_date}</small>
                   {receipt.items.map((item) => (
                     <small style={{ display: "block" }} key={`${sale.id}-${item.name}`}>
                       {item.qty}× {item.name}

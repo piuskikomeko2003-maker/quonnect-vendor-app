@@ -63,7 +63,7 @@ export function StallScreen({ data }: { data: StallData }) {
     <>
       <div className="stallhero" style={{ background: stall.accent_color }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Avatar logoUrl={vendor.logo_url} name={vendor.business_name} />
+          <Avatar logoUrl={vendor.logo_url} name={vendor.business_name} size="stall" />
           <div>
             <h2>{stall.name}</h2>
             <p>{stall.tagline || ""}</p>
@@ -178,6 +178,7 @@ export function StallScreen({ data }: { data: StallData }) {
       </div>
 
       <ProductSheet
+        key={addOpen ? "add-open" : "add-closed"}
         open={addOpen}
         onClose={() => setAddOpen(false)}
         vendorId={vendor.id}

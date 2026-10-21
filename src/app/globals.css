@@ -260,6 +260,15 @@ a {
   box-shadow: var(--shadow);
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700;
+}
+
 .card h3 {
   font-size: 13px;
   color: var(--mut);
@@ -476,9 +485,11 @@ a {
   margin-right: 4px;
   color: var(--accent);
   vertical-align: middle;
+  display: inline-block;
 }
 
 .chip img {
+  display: inline-block;
   width: 22px;
   height: 22px;
   border-radius: 6px;
@@ -867,6 +878,7 @@ dialog.sheet::backdrop {
 .sc .t svg.chev {
   color: #7a8c84;
   flex-shrink: 0;
+  display: inline-block;
 }
 
 .sc b.v {
@@ -1313,6 +1325,13 @@ dialog.sheet::backdrop {
 
 .stallhero h2 {
   font-size: 19px;
+  font-weight: 700;
+}
+
+.stallhero .av {
+  width: 52px;
+  height: 52px;
+  font-size: 17px;
 }
 
 .stallhero p {
@@ -1368,11 +1387,7 @@ dialog.sheet::backdrop {
 }
 
 .authhero {
-  background: linear-gradient(
-    110deg,
-    color-mix(in srgb, var(--accent) 58%, #000) 0%,
-    var(--accent) 100%
-  );
+  background: var(--accent);
   color: #fff;
   padding: 34px 22px 30px;
   border-radius: 0 0 28px 28px;

@@ -133,6 +133,7 @@ export function StockScreen({ vendorId, products }: StockScreenProps) {
       </div>
 
       <ProductSheet
+        key={productOpen ? "product-open" : "product-closed"}
         open={productOpen}
         vendorId={vendorId}
         onClose={() => setProductOpen(false)}
@@ -152,6 +153,7 @@ export function StockScreen({ vendorId, products }: StockScreenProps) {
       />
 
       <RestockSheet
+        key={restockProduct?.id ?? "none"}
         product={restockProduct}
         busy={busy}
         onClose={() => setRestockProduct(null)}

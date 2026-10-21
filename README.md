@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Quonnect Vendor
 
-## Getting Started
+Mobile-first business app for market vendors: record sales with a price override, track stock, expenses, income and budgets, see hand-built analytics, and publish an online stall.
 
-First, run the development server:
+The UI is a 1:1 rebuild of `quonnect-vendor-app.html`, rendered inside a centred 420px phone shell on desktop. Backend is Supabase (Postgres + Auth + Storage) with Next.js App Router server components and server actions.
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # then fill in your Supabase keys
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required env:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+# only for scripts/seed-demo.ts, never for the app
+SUPABASE_SERVICE_ROLE_KEY=
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Supabase setup
 
-## Learn More
+The project must have the migrations in `supabase/migrations/` applied:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx supabase link --project-ref <project-ref>
+npx supabase db push
+npx supabase gen types typescript --linked > src/types/app-db.ts
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Migration order:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. `20260901_00_baseline.sql` — creates `vendors`, `products`, `finance_entries` and their base RLS (these were previously created out of band).
+2. `20260928_01_core_and_modular_schema.sql` — existing modular schema.
+3. `20260928_02_report_stock_rpc.sql` — existing stock report RPC.
+4. `20261021_01_ui_rebuild.sql` — stalls, stock movements, budgets, profile/product/sale columns, storage policies, transactional RPCs and dashboard aggregates.
 
-## Deploy on Vercel
+`src/types/app-db.ts` mirrors the final schema. Regenerate it after any migration instead of hand-editing.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Commands
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Next dev server |
+| `npm run build` | Production build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run seed:demo -- --email you@example.com` | Dev-only demo history (requires service-role key). Add `--reset` to replace demo rows. |
+| `npm run test:acceptance` | Database acceptance tests (sales, net profit, month switch, RLS). Requires a reachable project + service-role key. |
+| `node scripts/ui-screenshots.mjs` | Visual QA screenshots at 430px into `docs/ui-checks/` (dev server running) |
+| `node scripts/ui-interactions.mjs` | Sheet/cart screenshots |
+
+## Routes
+
+| Route | Purpose |
+| --- | --- |
+| `/login`, `/signup` | Email/password auth and 3-step vendor signup |
+| `/home` | Sales today, spend today, month summary, budget, profit trend, transactions, low stock |
+| `/sell` | Product chips, editable sold price, transactional sale, receipts |
+| `/stock` | Stock value, categories, product registration, restock |
+| `/money` | Expenses, other income, budgets |
+| `/analytics` | Growth, monthly sales, expense trend, cost vs price |
+| `/stall` | Listings, publish toggles, deals, stall customisation, customer preview (owner session) |
+| `/profile` | Vendor/business/social details, logo, password, logout |
+
+Auth is enforced by `src/proxy.ts` (Next 16's replacement for middleware). Signed-in users are redirected from `/` and auth pages to `/home`.
+
+## Architecture
+
+```
+src/app/(app)/          authenticated screens + shared shell
+src/app/login,signup    auth screens
+src/actions/            server actions (auth, sales/products, money, stall/profile)
+src/components/app/     Header, TabBar
+src/components/screens/ screen-level client components
+src/components/ui/      Icon, BottomSheet, Toast, Avatar, Thumb
+src/components/charts/  LineChart, BarChart, ProfitBars (hand-built SVG)
+src/lib/supabase/       browser/server/proxy Supabase clients
+src/lib/data.ts         server-side reads and RPC calls
+src/lib/receipt.ts      canvas receipt + WhatsApp text/share utilities
+src/lib/constants.ts    categories, sizes, palette, analytics groups
+```
+
+Server components load data; client components only handle interaction. Writes go through server actions, then `revalidatePath`, so numbers update immediately. No chart or UI library is used; charts are ports of the prototype's SVG algorithms.
+
+## Business rules
+
+- Effective price = `price × (1 − discount_pct / 100)`.
+- Each sale item stores `listed_price`, `sold_price` and `unit_cost` at sale time.
+- Sale profit = `Σ((sold − unit_cost) × qty)`; price reduction = `Σ((listed − sold) × qty)`.
+- `create_sale` is atomic: it locks products, validates stock, decrements, writes `stock_movements`, then writes the sale and items. Stock can never go negative.
+- Restock is atomic and writes a `stock_movements` row; it can optionally create a `Stock purchase` ledger entry.
+- Net profit = gross profit + other income − expenses **excluding** `Stock purchase`.
+- Home budget used = this month's spend in budgeted categories ÷ the sum of those budgets.
+- Trends hide the percentage when the comparison value is zero.
+- Money is integer UGX and formatted `UGX 1,234,500`.
+
+## Data model note
+
+The rebuild reuses `finance_entries` as the single ledger instead of introducing duplicate `expenses` / `other_income` tables. Expense rows are `type = 'expense'`; other income rows are `type = 'income'`. See `docs/DATABASE_BRIEFING.md`.
+
+## Dev-only files
+
+- `src/app/preview/[screen]` — visual QA harness using fixture data. It returns 404 in production unless `ALLOW_PREVIEW=1`.
+- `scripts/seed-demo.ts` — demo generator. It is never imported by the app and must only be run against a dev project.
+- `scripts/ui-*.mjs` — Playwright screenshot helpers.
+
+## Current blocker
+
+The Supabase project referenced by `.env.local` (`akfktjvckvlfclkwjppn.supabase.co`) did not resolve from the build machine (NXDOMAIN), so the live schema/RLS and end-to-end acceptance tests could not be executed here. The migrations and type contract are ready; run `db push` against a reachable project, then complete the checks in `docs/UI_REBUILD_PLAN.md` §8.

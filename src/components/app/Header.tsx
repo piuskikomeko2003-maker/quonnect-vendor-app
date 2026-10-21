@@ -23,8 +23,9 @@ const TITLES: Record<string, [string, string]> = {
 
 export function Header({ ownerName, businessName, logoUrl }: HeaderProps) {
   const pathname = usePathname();
-  const entry = TITLES[pathname] ?? TITLES["/home"];
-  const title = pathname === "/home" ? `Hello, ${firstName(ownerName)}` : entry[0];
+  const path = pathname.startsWith("/preview/") ? pathname.slice("/preview".length) : pathname;
+  const entry = TITLES[path] ?? TITLES["/home"];
+  const title = path === "/home" ? `Hello, ${firstName(ownerName)}` : entry[0];
 
   return (
     <header className="app-header">

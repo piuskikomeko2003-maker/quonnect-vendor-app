@@ -9,10 +9,9 @@ export type Json =
 /**
  * Application database contract for the rebuilt Quonnect Vendor app.
  *
- * This mirrors supabase/migrations/20261021_01_ui_rebuild.sql. The legacy
- * src/types/database.types.ts is kept only while the old screens are being
- * removed; once the schema is reachable this file can be replaced with
- * `supabase gen types typescript`.
+ * This mirrors supabase/migrations/20261021_01_ui_rebuild.sql. Once the
+ * schema is reachable, replace this file with
+ * `supabase gen types typescript --linked > src/types/app-db.ts`.
  */
 export interface AppDatabase {
   public: {

@@ -19,7 +19,7 @@ export function TabBar() {
   return (
     <nav className="tabbar" aria-label="Main navigation">
       {TABS.map((tab) => {
-        const active = pathname === tab.href;
+        const active = pathname === tab.href || pathname === `/preview${tab.href}`;
         return (
           <Link
             key={tab.href}

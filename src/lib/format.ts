@@ -131,6 +131,22 @@ export function dayMonthLabel(key: string): string {
   return `${date.getUTCDate()} ${SHORT_MONTHS[date.getUTCMonth()]}`;
 }
 
+/** Home chart label, matching the prototype's mdLab(): "Oct 15". */
+export function monthDayLabel(key: string): string {
+  const date = parseDateKey(key);
+  return `${SHORT_MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+/** Home transaction date, matching toLocaleDateString('en-US'). */
+export function usDayLabel(key: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parseDateKey(key));
+}
+
 export function weekdayLabel(key: string): string {
   return new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(parseDateKey(key));
 }

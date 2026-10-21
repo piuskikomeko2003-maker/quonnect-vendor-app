@@ -38,6 +38,7 @@ interface AnalyticsScreenProps {
   metrics: Metric[];
   months: number;
   cmp: "item" | "time";
+  basePath?: string;
 }
 
 function Legend({ items }: { items: [string, string][] }) {
@@ -70,6 +71,7 @@ export function AnalyticsScreen({
   metrics,
   months,
   cmp,
+  basePath = "/analytics",
 }: AnalyticsScreenProps) {
   const router = useRouter();
 
@@ -82,7 +84,7 @@ export function AnalyticsScreen({
       cmp,
       ...patch,
     });
-    router.push(`/analytics?${params.toString()}`);
+    router.push(`${basePath}?${params.toString()}`);
   }
 
   function setRange(next: AnalyticsRange) {

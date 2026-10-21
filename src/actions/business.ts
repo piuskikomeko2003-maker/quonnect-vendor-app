@@ -119,9 +119,11 @@ export async function recordSaleAction(lines: CartLineInput[]): Promise<SaleActi
     .in("id", ids);
 
   const products = new Map(((data ?? []) as Product[]).map((product) => [product.id, product]));
+  if (lines.some((line) => !products.has(line.product_id))) {
+    return { ok: false, error: "A product in your cart no longer exists" };
+  }
   const items = lines.map((line) => {
-    const product = products.get(line.product_id);
-    if (!product) throw new Error("A product in your cart no longer exists");
+    const product = products.get(line.product_id)!;
     return {
       product_id: product.id,
       name: product.name,

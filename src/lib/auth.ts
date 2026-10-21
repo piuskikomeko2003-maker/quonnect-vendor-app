@@ -37,7 +37,7 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
   let activeVendor = vendor;
   let activeStall: Stall | null = null;
 
-  if (!activeVendor && !error) {
+  if (!activeVendor || error) {
     const repaired = await ensureVendorProfile(supabase, user);
     activeVendor = repaired.vendor;
     activeStall = repaired.stall;
@@ -52,6 +52,11 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
       .eq("vendor_id", activeVendor.id)
       .maybeSingle();
     activeStall = stall;
+
+    if (!activeStall) {
+      const repaired = await ensureVendorProfile(supabase, user);
+      activeStall = repaired.stall;
+    }
   }
 
   return {
@@ -64,6 +69,6 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
 
 export async function requireVendor(): Promise<VendorContext> {
   const context = await getVendorContext();
-  if (!context) redirect("/login?error=profile");
+  if (!context) redirect("/setup");
   return context;
 }

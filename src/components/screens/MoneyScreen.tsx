@@ -6,15 +6,15 @@ import { addExpenseAction, addIncomeAction, setBudgetAction } from "@/actions/bu
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useToast } from "@/components/ui/Toast";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
-import { formatDay, formatUGX } from "@/lib/format";
+import { formatUGX } from "@/lib/format";
 import type { MoneyData } from "@/lib/types";
 
 type MoneyTab = "exp" | "inc" | "bud";
 
-export function MoneyScreen({ data }: { data: MoneyData }) {
+export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; initialTab?: MoneyTab }) {
   const router = useRouter();
   const toast = useToast();
-  const [tab, setTab] = useState<MoneyTab>("exp");
+  const [tab, setTab] = useState<MoneyTab>(initialTab);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
@@ -55,7 +55,7 @@ export function MoneyScreen({ data }: { data: MoneyData }) {
                   <div className="grow">
                     <b>{expense.category}</b>
                     <small>
-                      {formatDay(expense.entry_date)}
+                      {expense.entry_date}
                       {expense.notes ? ` · ${expense.notes}` : ""}
                     </small>
                   </div>
@@ -81,7 +81,7 @@ export function MoneyScreen({ data }: { data: MoneyData }) {
                 <div className="row" key={entry.id}>
                   <div className="grow">
                     <b>{entry.category}</b>
-                    <small>{formatDay(entry.entry_date)}</small>
+                    <small>{entry.entry_date}</small>
                   </div>
                   <b className="pos">+{formatUGX(entry.amount)}</b>
                 </div>
