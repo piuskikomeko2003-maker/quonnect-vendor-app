@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ensureVendorProfile } from "@/lib/vendor";
 import type { Stall, Vendor } from "@/types/app-db";
 
 export interface VendorContext {
@@ -33,19 +34,31 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (error || !vendor) return null;
+  let activeVendor = vendor;
+  let activeStall: Stall | null = null;
 
-  const { data: stall } = await supabase
-    .from("stalls")
-    .select("*")
-    .eq("vendor_id", vendor.id)
-    .maybeSingle();
+  if (!activeVendor && !error) {
+    const repaired = await ensureVendorProfile(supabase, user);
+    activeVendor = repaired.vendor;
+    activeStall = repaired.stall;
+  }
+
+  if (!activeVendor) return null;
+
+  if (!activeStall) {
+    const { data: stall } = await supabase
+      .from("stalls")
+      .select("*")
+      .eq("vendor_id", activeVendor.id)
+      .maybeSingle();
+    activeStall = stall;
+  }
 
   return {
     supabase,
     user: { id: user.id, email: user.email },
-    vendor,
-    stall: stall ?? FALLBACK_STALL(vendor),
+    vendor: activeVendor,
+    stall: activeStall ?? FALLBACK_STALL(activeVendor),
   };
 });
 
