@@ -304,10 +304,6 @@ export interface AppDatabase {
         Args: { p_vendor_id: string };
         Returns: Json;
       };
-      vendor_today_metrics: {
-        Args: { p_vendor_id: string };
-        Returns: Json;
-      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
