@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext";
-import { OfflineSyncIndicator } from "@/components/layout/OfflineSyncIndicator";
 
 export const metadata: Metadata = {
-  title: "Quonnect Vendor App — Modular Market Stall Business Manager",
-  description: "Mobile-first POS, product catalog, customer debts, and financial reports for African market vendors.",
+  title: "Quonnect Vendor",
+  description: "Run your market stall: stock, sales, money, analytics and your online stall.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -17,23 +16,17 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
+  themeColor: "#0F8A4D",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full antialiased light">
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-teal-500 selection:text-white">
-        <AuthProvider>
-          <OfflineSyncIndicator />
-          {children}
-        </AuthProvider>
+    <html lang="en">
+      <body>
+        <div className="phone">
+          <ToastProvider>{children}</ToastProvider>
+        </div>
       </body>
     </html>
   );

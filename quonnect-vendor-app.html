@@ -1,0 +1,1124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quonnect Vendor App</title>
+<style>
+:root{
+  --teal:#0F766E; --teal-d:#0B5C56; --green:#16A34A; --mint:#E6F4F1; --ink:#10241F; --mut:#6B7F7A;
+  --line:#DCE8E5; --bg:#F4F8F7; --card:#fff; --red:#DC2626; --amber:#D97706; --accent:#0F8A4D;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#cfe3df;color:var(--ink);min-height:100vh;display:flex;justify-content:center;align-items:center}
+#app{width:100%;max-width:420px;height:100vh;max-height:860px;background:var(--bg);position:relative;display:flex;flex-direction:column;overflow:hidden}
+@media(min-width:460px){#app{border-radius:28px;box-shadow:0 20px 60px rgba(15,118,110,.25);height:92vh}}
+header{background:var(--accent);color:#fff;padding:18px 18px 22px;border-radius:0 0 22px 22px;transition:background .3s}
+header .top{display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;font-weight:700}
+header p{font-size:12px;opacity:.85;margin-top:2px}
+.badge{background:rgba(255,255,255,.18);padding:5px 10px;border-radius:99px;font-size:11px;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:#86EFAC}
+main{flex:1;overflow-y:auto;padding:14px 16px 90px}
+nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+nav button{flex:1;border:0;background:none;padding:6px 0;font-size:10.5px;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}
+nav button span{font-size:19px}
+nav button.on{color:var(--accent);font-weight:700}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:12px;border:1px solid var(--line)}
+.card h3{font-size:13px;color:var(--mut);font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px}
+.stat small{font-size:10.5px;color:var(--mut);display:block}
+.stat b{font-size:14px;display:block;margin-top:3px}
+.pos{color:var(--green)} .neg{color:var(--red)}
+.bar{height:8px;background:var(--mint);border-radius:9px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:9px}
+.bar i.warn{background:var(--amber)} .bar i.over{background:var(--red)}
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row .grow{flex:1;min-width:0}
+.row b{font-size:14px;display:block}
+.row small{font-size:11.5px;color:var(--mut)}
+.emo{width:42px;height:42px;border-radius:12px;background:var(--mint);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.btn{border:0;background:var(--accent);color:#fff;padding:12px 16px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;width:100%}
+.btn.sm{width:auto;padding:7px 12px;font-size:12px;border-radius:9px}
+.btn.ghost{background:var(--mint);color:var(--accent)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px}
+.chip{border:1px solid var(--line);background:#fff;padding:8px 12px;border-radius:12px;font-size:12.5px;white-space:nowrap;cursor:pointer;text-align:left}
+.chip small{display:block;color:var(--mut);font-size:10.5px}
+.chip.out{opacity:.4}
+.seg{display:flex;background:var(--mint);border-radius:12px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;border:0;background:none;padding:8px;border-radius:10px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer}
+.seg button.on{background:#fff;color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.qty{display:flex;align-items:center;gap:8px}
+.qty button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:#fff;font-size:16px;cursor:pointer}
+label{font-size:12px;color:var(--mut);font-weight:600;display:block;margin:10px 0 4px}
+input,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff;color:var(--ink);font-family:inherit}
+input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+.tag{font-size:10.5px;padding:3px 8px;border-radius:99px;background:var(--mint);color:var(--accent);font-weight:700}
+.tag.red{background:#FEE2E2;color:var(--red)} .tag.amb{background:#FEF3C7;color:var(--amber)}
+.sw{display:inline-block;width:28px;height:28px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px var(--line);cursor:pointer;margin-right:8px}
+.sw.on{box-shadow:0 0 0 2px var(--ink)}
+.toggle{width:42px;height:24px;border-radius:99px;background:#CBD5D1;position:relative;cursor:pointer;flex-shrink:0;transition:.2s}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+.toggle.on{background:var(--green)} .toggle.on::after{left:21px}
+#sheetBg{position:absolute;inset:0;background:rgba(10,30,26,.45);display:none;align-items:flex-end;z-index:20}
+#sheet{background:#fff;width:100%;border-radius:22px 22px 0 0;padding:18px 18px 26px;max-height:88%;overflow-y:auto}
+#sheet h2{font-size:17px;margin-bottom:4px}
+.spark{display:flex;align-items:flex-end;gap:7px;height:90px;margin-top:6px}
+.spark div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:9.5px;color:var(--mut);gap:4px}
+.spark i{width:100%;background:var(--accent);border-radius:6px 6px 0 0;min-height:3px;opacity:.85}
+.stallhero{border-radius:16px;padding:18px;color:#fff;margin-bottom:12px}
+.stallhero h2{font-size:19px}.stallhero p{font-size:12px;opacity:.9;margin-top:3px}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px;text-align:center}
+.pcard .emo{width:100%;height:84px;margin-bottom:6px;font-size:30px}
+.emo{overflow:hidden}
+.emo img{width:100%;height:100%;object-fit:cover;display:block}
+.emo{color:var(--accent)}
+.pcard .emo svg{width:36px;height:36px}
+nav button svg{display:block}
+.chip svg{width:18px;height:18px;margin-right:4px;color:var(--accent)}
+.chip img{width:22px;height:22px;border-radius:6px;object-fit:cover;vertical-align:middle;margin-right:4px}
+.upl{border:2px dashed var(--line);border-radius:14px;height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--mut);font-size:13px;cursor:pointer;overflow:hidden;background:var(--bg);margin:6px 0 0}
+.upl img{width:100%;height:100%;object-fit:cover}
+.snap{background:linear-gradient(135deg,var(--accent),var(--green));color:#fff;border-radius:18px;padding:16px;margin-bottom:12px}
+.snap small{opacity:.85;font-size:11.5px}
+.snap .big{font-size:26px;font-weight:800;margin:4px 0 12px}
+.snap .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid rgba(255,255,255,.3);padding-top:10px;margin-top:2px}
+.snap .two b{display:block;font-size:14px;margin-top:2px}
+.pcard b{font-size:12.5px;display:block}
+.pcard s{font-size:11px;color:var(--mut)}
+.toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:99px;font-size:12.5px;z-index:40;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+.empty{text-align:center;color:var(--mut);font-size:13px;padding:18px}
+textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff;color:var(--ink);font-family:inherit;resize:vertical;min-height:70px}
+textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+.opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.opt{border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 13px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+.opt.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pin{width:130px;padding:7px 10px;font-weight:700;font-size:14px}
+.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.av{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;overflow:hidden;cursor:pointer;flex-shrink:0}
+.av img{width:100%;height:100%;object-fit:cover}
+#app.auth header,#app.auth nav{display:none}
+#app.auth main{padding:0 0 34px}
+.authhero{background:var(--accent);color:#fff;padding:34px 22px 30px;border-radius:0 0 28px 28px;text-align:center}
+.authhero .mark{width:64px;height:64px;border-radius:20px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.authbody{padding:18px 16px 0}
+.bigav{width:96px;height:96px;border-radius:50%;background:var(--mint);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;overflow:hidden;border:4px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.14);margin:0 auto}
+.bigav img{width:100%;height:100%;object-fit:cover}
+.camb{position:absolute;right:-2px;bottom:2px;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;border:3px solid #fff}
+.steps{display:flex;gap:6px;margin:0 0 14px}
+.steps i{flex:1;height:5px;border-radius:9px;background:var(--line)}
+.steps i.on{background:var(--accent)}
+.link{color:var(--accent);font-weight:700;background:none;border:0;font-size:13px;cursor:pointer}
+.err{color:var(--red);font-size:12.5px;margin:10px 0 2px;min-height:16px}
+.btn.out{background:#fff;color:var(--red);border:1px solid #F3C6C6}
+.lbl{font-size:11px;color:var(--mut);font-weight:600;margin:12px 0 5px}
+.dotc{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.ro{font-size:12px;display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:10px}
+nav button{font-size:10px}
+
+/* ===== Figma home restyle ===== */
+:root{--accent:#0F8A4D;--green:#16A34A;--mint:color-mix(in srgb,var(--accent) 11%,#fff);--bg:color-mix(in srgb,var(--accent) 7%,#fff);--line:color-mix(in srgb,var(--accent) 10%,#E4ECE7)}
+body{background:#D3E8DC}
+header{position:relative;overflow:hidden;background:linear-gradient(110deg,color-mix(in srgb,var(--accent) 58%,#000) 0%,var(--accent) 100%);padding:20px 18px 24px;border-radius:0 0 26px 26px}
+header::before{content:"";position:absolute;top:-45%;right:14%;width:55%;height:220%;background:rgba(255,255,255,.07);transform:rotate(24deg);pointer-events:none}
+header .top{position:relative}
+header h1{font-size:24px;font-weight:800;letter-spacing:-.3px}
+header p{font-size:13px;opacity:.92;margin-top:3px}
+.badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);padding:7px 12px;font-size:12.5px;font-weight:600}
+.dot{width:9px;height:9px;background:#4ADE80;box-shadow:0 0 0 3px rgba(74,222,128,.25)}
+#hAv{width:50px;height:50px;border:3px solid #fff;font-size:16px;font-weight:800;background:rgba(255,255,255,.18)}
+.card{border:0;border-radius:20px;box-shadow:0 2px 12px color-mix(in srgb,var(--accent) 12%,transparent)}
+.ci{width:44px;height:44px;border-radius:50%;background:color-mix(in srgb,var(--accent) 14%,#fff);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ci.sm{width:36px;height:36px}.ci.xs{width:30px;height:30px}
+.ci.solid{background:var(--accent);color:#fff}
+.ci.w{background:rgba(255,255,255,.88);color:var(--accent)}
+.hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
+.sc{background:#fff;border-radius:18px;padding:11px 10px 10px;box-shadow:0 2px 12px color-mix(in srgb,var(--accent) 12%,transparent);cursor:pointer;min-width:0}
+.sc.hl{background:color-mix(in srgb,var(--accent) 9%,#fff);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--accent) 22%,#fff),0 4px 14px color-mix(in srgb,var(--accent) 14%,transparent)}
+.sc .t{display:flex;align-items:center;gap:6px}
+.sc .t span{flex:1;font-size:10.5px;font-weight:600;line-height:1.15;color:var(--ink)}
+.sc .t svg.chev{color:#7A8C84;flex-shrink:0}
+.sc b.v{display:block;font-size:15.5px;font-weight:800;margin:9px 0 5px;letter-spacing:-.2px;white-space:nowrap}
+.tr{display:inline-block;font-size:9.5px;font-weight:700;color:var(--green)}
+.tr.bad{color:var(--red)}
+.ch{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ch .grow{min-width:0}
+.ct{font-size:16.5px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ch small{font-size:12px;color:var(--mut);display:block;margin-top:2px}
+.pill{font-size:11px;font-weight:700;color:var(--accent);background:var(--mint);padding:3px 9px;border-radius:99px}
+.msel{position:relative;display:inline-flex;align-items:center;gap:6px;background:var(--mint);color:var(--accent);padding:8px 12px;border-radius:99px;font-size:13px;font-weight:700;margin:0;flex-shrink:0}
+.msel select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
+.mr{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.mr:first-of-type{border-top:0}
+.mr .grow{flex:1;min-width:0}
+.mr b.l{font-size:14.5px;font-weight:700;display:block}
+.mr small{font-size:11.5px;color:var(--mut);display:block;line-height:1.3}
+.mr b.a{font-size:15px;font-weight:800;white-space:nowrap}
+.bud{background:linear-gradient(110deg,color-mix(in srgb,var(--accent) 58%,#000),var(--accent));color:#fff;border-radius:20px;padding:14px;margin-bottom:12px;box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 30%,transparent)}
+.bud .r1{display:flex;align-items:center;gap:12px}
+.bud .grow{flex:1;min-width:0}
+.bud b.bt{font-size:16.5px;font-weight:800;display:block}
+.bud small{font-size:11.5px;opacity:.88;display:block;margin-top:2px;text-wrap:balance}
+.bud .vd{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;padding:8px 10px;border-radius:99px;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;flex-shrink:0}
+.bud .r2{display:flex;align-items:center;gap:12px;margin-top:12px}
+.bud .trk{flex:1;height:10px;border-radius:99px;background:rgba(255,255,255,.22);overflow:hidden}
+.bud .trk i{display:block;height:100%;border-radius:99px;background:#4ADE80}
+.bud .trk i.over{background:#FCA5A5}
+.bud .pc{font-weight:800;font-size:14px}
+.tog{display:flex;background:var(--mint);border-radius:99px;padding:3px;flex-shrink:0}
+.tog button{border:0;background:none;padding:6px 8px;border-radius:99px;font-size:11.5px;font-weight:700;color:#5F7569;cursor:pointer}
+.tog button.on{background:var(--accent);color:#fff}
+.dates{display:flex;gap:8px;margin:0 0 8px}
+.dates input{padding:8px 10px;font-size:13px}
+.dp{display:flex;align-items:center;gap:12px;background:color-mix(in srgb,var(--accent) 9%,#fff);border-radius:20px;padding:14px;margin-bottom:12px;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--accent) 16%,#fff)}
+.dp .grow{flex:1;min-width:0}
+.dp b.dt{font-size:16.5px;font-weight:800;display:block}
+.dp small{font-size:12px;color:var(--mut)}
+.dp .big{font-size:21px;font-weight:800;color:var(--accent);text-align:right;white-space:nowrap}
+.dp .big.neg{color:var(--red)}
+.tx{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid var(--line)}
+.tx:first-of-type{border-top:0}
+.tx .grow{flex:1;min-width:0}
+.tx b.l{font-size:13.5px;font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx small{font-size:11px;color:var(--mut);display:block;margin-top:1px}
+.tx b.a{font-size:13.5px;font-weight:800;white-space:nowrap}
+.seeall{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:2px;margin-left:auto;flex-shrink:0}
+.ch.nw .ct{white-space:nowrap}
+.ch.nw .ci{width:40px;height:40px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toast" id="toast"></div>
+  <header>
+    <div class="top">
+      <div><h1 id="hTitle">Quonnect Vendor</h1><p id="hSub"></p></div>
+      <div style="display:flex;align-items:center;gap:10px"><div class="badge"><span class="dot"></span><span>Synced</span></div><div class="av" id="hAv" onclick="go('profile')"></div></div>
+    </div>
+  </header>
+  <main id="main"></main>
+  <nav id="nav"></nav>
+  <div id="sheetBg"><div id="sheet"></div></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = n => 'UGX ' + Math.round(n).toLocaleString('en-US');
+const dkey = d => { const x = new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); };
+const daysAgo = n => { const d = new Date(); d.setDate(d.getDate()-n); return dkey(d); };
+const today = () => dkey(new Date());
+const addDays=(k,n)=>{ const d=new Date(k+'T12:00'); d.setDate(d.getDate()+n); return dkey(d); };
+const EXP_CATS = ['Stock purchase','Transport','Stall fee','Packaging','Airtime/Data','Food','Other'];
+const ICONS={
+coins:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="M8 14h2M14 14h2M8 17.5h2"/>',
+bars:'<path d="M6 20v-9M12 20V5M18 20v-6" stroke-width="3"/>',
+trend:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+plusc:'<circle cx="12" cy="12" r="9.5"/><path d="M12 8v8M8 12h8"/>',
+moneybag:'<path d="M9 3h6l-1.5 3h-3z"/><path d="M10.5 6C6 8 4 12 4 15.5 4 19 7.5 21 12 21s8-2 8-5.5C20 12 18 8 13.5 6"/><path d="M14 12.3c-.5-.5-1.2-.8-2-.8-1.2 0-2 .6-2 1.5s.8 1.3 2 1.5 2 .6 2 1.5-.8 1.5-2 1.5c-.8 0-1.6-.3-2-.8M12 10.5v1M12 16.5v1"/>',
+swap:'<path d="M4 8h15l-3-3.5M20 16H5l3 3.5"/>',
+cart:'<path d="M3 4h3l2.5 11h9.5l2-8H7"/><circle cx="10" cy="19.5" r="1.3"/><circle cx="17" cy="19.5" r="1.3"/>',
+car:'<path d="M5 15l1.5-5.5A2 2 0 018.4 8h7.2a2 2 0 011.9 1.5L19 15"/><rect x="3" y="14" width="18" height="5" rx="2"/><circle cx="7.5" cy="16.5" r=".7"/><circle cx="16.5" cy="16.5" r=".7"/>',
+utensils:'<path d="M6 3v8M4 3v5a2 2 0 004 0V3M6 11v10M17 3c-2 2-3 5-3 8h3v10"/>',
+chevr:'<path d="M9 5l7 7-7 7"/>',
+chevd:'<path d="M5 9l7 7 7-7"/>',
+mobile:'<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>',
+home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+wallet:'<rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1"/>',
+store:'<path d="M3 9l2-5h14l2 5"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/><path d="M5 12v8h14v-8"/>',
+camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+check:'<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
+link:'<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>',
+shirt:'<path d="M8 3L3 6l2 4 3-1v12h8V9l3 1 2-4-5-3c-.5 1.5-2 2.5-4 2.5S8.5 4.5 8 3z"/>',
+basket:'<path d="M3 10h18l-2 10H5z"/><path d="M8 10l4-6 4 6"/>',
+bottle:'<path d="M10 3h4v3l2 3v11a1 1 0 01-1 1H9a1 1 0 01-1-1V9l2-3z"/><path d="M8 13h8"/>',
+shoe:'<path d="M3 16c0-3 1-5 2-7l3 2 2-2c1 3 4 4 8 5 2 .5 3 1 3 3v1H3z"/>',
+bag:'<path d="M5 8h14l1 12H4z"/><path d="M9 8V6a3 3 0 016 0v2"/>',
+jeans:'<path d="M7 3h10l1 18h-5l-1-10-1 10H6z"/><path d="M7 7h10"/>',
+chart:'<path d="M4 4v16h16"/><path d="M7 15l4-4 3 3 5-6"/>',
+share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>',
+download:'<path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/>',
+phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
+mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+pin:'<path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/>',
+edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+logout:'<path d="M10 4H5v16h5"/><path d="M15 8l4 4-4 4M19 12H9"/>',
+lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/>',
+quote:'<path d="M5 17c0-4 1-7 4-9M13 17c0-4 1-7 4-9"/>',
+instagram:'<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".6"/>',
+facebook:'<path d="M15 3h-2.5A4.5 4.5 0 008 7.5V10H5v4h3v7h4v-7h3l1-4h-4V7.5c0-.3.2-.5.5-.5H15z"/>',
+tiktok:'<path d="M14 3v11.5a3.5 3.5 0 11-3.5-3.5"/><path d="M14 3c.3 2.5 2 4.2 5 4.5"/>',
+whatsapp:'<path d="M4 20l1.4-4.3A8.5 8.5 0 1112 20.5a8.4 8.4 0 01-4.2-1.1z"/><path d="M9 9c0 3 3 6 6 6l1-2-2-1-1 .7c-1-.5-1.7-1.2-2.2-2.2L11.5 9l-1-2z"/>'
+};
+const ic=(n,s=20)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle">${ICONS[n]||ICONS.box}</svg>`;
+
+function addHistory(d){
+  if(d.hist) return; d.hist=true;
+  let sv=12345; const rnd=()=>{ sv=(sv*1664525+1013904223)%4294967296; return sv/4294967296; };
+  const st=new Date(); st.setDate(1); st.setMonth(st.getMonth()-11); st.setHours(12,0,0,0);
+  const endKey=daysAgo(7), startKey=dkey(st);
+  const total=(new Date(endKey+'T12:00')-st)/86400000||1;
+  let id=1000;
+  for(let k=startKey,i=0;k<=endKey;i++){
+    const dt=new Date(k+'T12:00'), t=Math.min(1,(dt-st)/86400000/total), wk=dt.getDay();
+    if(rnd()<0.9){
+      const base=(68000+48000*t)*((wk===0||wk===6)?1.35:1)*(0.7+0.6*rnd());
+      const tot=Math.round(base/500)*500, pr=Math.round(tot*(0.34+0.1*rnd())/500)*500;
+      const adj=rnd()<0.25?Math.round(tot*0.04*rnd()/500)*500:0;
+      d.sales.push({id:id++,date:k,total:tot,profit:pr,adj,items:[]});
+    }
+    const day=dt.getDate(), ym=k.slice(0,7);
+    const ex=(cat,amt,note)=>d.expenses.push({id:id++,date:k,cat,amt:Math.round(amt/500)*500,note:note||''});
+    if(day===3) ex('Stall fee',92000,'Market day fee');
+    if(day===5||day===20) ex('Stock purchase',320000+260000*t+120000*rnd(),'Restock');
+    if(day===8) ex('Airtime/Data',5000+5000*rnd());
+    if(day===10||day===17) ex('Transport',15000+14000*rnd());
+    if(day===12) ex('Packaging',10000+14000*rnd());
+    if(day===14&&rnd()<0.5) d.income.push({id:id++,date:k,src:'Custom tailoring',amt:Math.round((40000+40000*rnd())/500)*500});
+    k=addDays(k,1);
+  }
+  d.nextId=Math.max(d.nextId||100,id);
+}
+
+function seed(){
+  const d = {
+    account:null, loggedIn:false, profile:null,
+    stall:{name:'My Stall',tagline:'',color:'#0F8A4D'},
+    products:[
+      {id:1,name:'Kitenge Dress',icon:'shirt',price:65000,cost:40000,qty:12,colors:['Blue','Red','Yellow'],discount:0,published:true,category:'Dresses',sizes:['S','M','L','XL'],desc:'Handmade kitenge, fitted waist, machine washable.'},
+      {id:2,name:'Leather Sandals',icon:'shoe',price:35000,cost:20000,qty:3,colors:['Brown','Black'],discount:10,published:true,category:'Shoes',sizes:['38','39','40','41','42'],desc:'Genuine leather with a cushioned sole.'},
+      {id:3,name:'Woven Basket',icon:'basket',price:25000,cost:12000,qty:20,colors:['Natural'],discount:0,published:true,category:'Other',sizes:['One size'],desc:'Hand-woven sisal basket.'},
+      {id:4,name:'Shea Body Butter',icon:'bottle',price:18000,cost:9000,qty:2,colors:[],discount:0,published:false,category:'Other',sizes:['One size'],desc:'Raw shea, unscented, 250g.'},
+      {id:5,name:'Denim Jeans',icon:'jeans',price:27000,cost:16000,qty:9,colors:['Blue','Black'],discount:0,published:true,category:'Trousers & jeans',sizes:['30','32','34','36'],desc:'Stretch denim, straight cut.'},
+    ],
+    sales:[
+      {id:1,date:daysAgo(6),total:140000,profit:55000,items:[]},
+      {id:2,date:daysAgo(5),total:95000,profit:38000,items:[]},
+      {id:3,date:daysAgo(4),total:210000,profit:82000,items:[]},
+      {id:4,date:daysAgo(3),total:60000,profit:22000,items:[]},
+      {id:5,date:daysAgo(2),total:175000,profit:70000,items:[]},
+      {id:6,date:daysAgo(1),total:120000,profit:46000,items:[]},
+      {id:7,date:today(),total:65000,profit:25000,adj:0,items:[{n:'Kitenge Dress',q:1,listed:65000,sold:65000}]},
+      {id:8,date:today(),total:25000,profit:9000,adj:2000,items:[{n:'Denim Jeans',q:1,listed:27000,sold:25000}]},
+    ],
+    expenses:[
+      {id:1,date:daysAgo(5),cat:'Stall fee',amt:92000,note:'Market day fee'},
+      {id:2,date:daysAgo(3),cat:'Transport',amt:15000,note:''},
+      {id:3,date:daysAgo(2),cat:'Packaging',amt:12000,note:'Bags'},
+      {id:4,date:today(),cat:'Airtime/Data',amt:5000,note:''},
+    ],
+    income:[{id:1,date:daysAgo(4),src:'Custom tailoring',amt:50000}],
+    budgets:{'Stock purchase':1200000,'Transport':40000,'Stall fee':120000,'Packaging':30000,'Airtime/Data':20000},
+    nextId:100
+  };
+  addHistory(d); return d;
+}
+let S;
+try{ S = JSON.parse(localStorage.getItem('qvapp3')) || seed(); }catch(e){ S = seed(); }
+const save = () => { try{ localStorage.setItem('qvapp3', JSON.stringify(S)); }catch(e){} };
+if(S && !S.hist && S.sales && S.sales.length) addHistory(S);
+if(S && S.stall && S.stall.color==='#0F766E') S.stall.color='#0F8A4D';
+let tab='home', moneyTab='exp', cart={};
+
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1900); }
+function openSheet(h){ $('#sheet').innerHTML=h; $('#sheetBg').style.display='flex'; }
+function closeSheet(){ $('#sheetBg').style.display='none'; }
+$('#sheetBg').addEventListener('click',e=>{ if(e.target.id==='sheetBg') closeSheet(); });
+const esc = t => String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const thumb = p => p.img ? `<img src="${p.img}" alt="">` : ic(p.icon||'box',22);
+const eff = p => p.price*(1-(p.discount||0)/100);
+const monthKey = () => today().slice(0,7);
+const sum = (a,f) => a.reduce((s,x)=>s+f(x),0);
+
+function render(){
+  document.documentElement.style.setProperty('--accent', S.stall.color);
+  const app=$('#app');
+  if(!S.account||!S.loggedIn){ app.classList.add('auth'); $('#main').innerHTML=authView(); save(); return; }
+  app.classList.remove('auth');
+  const titles={home:['Hello, '+firstName(),'Here is how your business is doing'],sell:['Record a sale','Tap products to add to the cart'],stock:['My stock','Register and monitor your items'],money:['Money','Expenses, income and budgets'],stall:['Online stall','Live on Quonnect Online Market'],profile:['My profile','Your business details'],analytics:['Analytics','See how your business is growing']};
+  $('#hTitle').textContent=titles[tab][0]; $('#hSub').textContent=titles[tab][1];
+  $('#hAv').innerHTML=avInner();
+  const tabs=[['home','home','Home'],['sell','receipt','Sell'],['stock','box','Stock'],['money','wallet','Money'],['analytics','chart','Analytics'],['stall','store','Stall']];
+  $('#nav').innerHTML=tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${ic(t[1],22)}</span>${t[2]}</button>`).join('');
+  $('#main').innerHTML = ({home,sell,stock,money,analytics,stall,profile})[tab]();
+  save();
+}
+function go(t){ tab=t; render(); $('#main').scrollTop=0; }
+
+/* ---------- ANALYTICS ---------- */
+const AC={sales:'#0F8A4D',expenses:'#D97706',profit:'#2563EB',cost:'#64748B',expected:'#D97706',actual:'#0F8A4D'};
+const RANGES=[['7d','7 days'],['30d','30 days'],['90d','3 months'],['6m','6 months'],['12m','12 months']];
+const GROUPS={'7d':['day'],'30d':['day','week'],'90d':['day','week','month'],'6m':['week','month'],'12m':['week','month']};
+const GNAME={day:'Day',week:'Week',month:'Month'};
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const monthsAgoKey=n=>{ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-n); return dkey(d); };
+const weekStart=k=>{ const d=new Date(k+'T12:00'); d.setDate(d.getDate()-((d.getDay()+6)%7)); return dkey(d); };
+const dLab=k=>{ const d=new Date(k+'T12:00'); return d.getDate()+' '+MON[d.getMonth()]; };
+const mLab=k=>MON[parseInt(k.slice(5,7))-1];
+const rangeStart=r=>({'7d':()=>daysAgo(6),'30d':()=>daysAgo(29),'90d':()=>daysAgo(89),'6m':()=>monthsAgoKey(5),'12m':()=>monthsAgoKey(11)})[r]();
+const monthList=n=>[...Array(n)].map((_,i)=>monthsAgoKey(n-1-i).slice(0,7));
+function short(n){ const a=Math.abs(n), sg=n<0?'-':''; if(a>=1e6) return sg+(a/1e6).toFixed(1).replace(/\.0$/,'')+'M'; if(a>=1e4) return sg+Math.round(a/1e3)+'k'; if(a>=1e3) return sg+(a/1e3).toFixed(1).replace(/\.0$/,'')+'k'; return sg+Math.round(a); }
+function niceMax(v){ if(v<=0) return 1; const p=Math.pow(10,Math.floor(Math.log10(v))), n=v/p; return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p; }
+function defAn(){ return {range:'30d',group:'day',metrics:['sales','expenses','profit'],months:12,cmp:'item'}; }
+function setRange(r){ S.an.range=r; if(!GROUPS[r].includes(S.an.group)) S.an.group=GROUPS[r][0]; render(); }
+function setGroup(g){ S.an.group=g; render(); }
+function togMetric(m){ const a=S.an.metrics, i=a.indexOf(m); if(i>=0){ if(a.length>1) a.splice(i,1); } else a.push(m); render(); }
+function setMonths(n){ S.an.months=n; render(); }
+function setCmp(c){ S.an.cmp=c; render(); }
+
+function buckets(startKey,endKey,group){
+  const map=new Map();
+  for(let k=startKey;k<=endKey;k=addDays(k,1)){
+    const b=group==='day'?k:group==='week'?weekStart(k):k.slice(0,7);
+    if(!map.has(b)) map.set(b,[]); map.get(b).push(k);
+  }
+  return [...map.entries()].map(([b,days])=>({key:b,days,label:group==='month'?mLab(b+'-01'):dLab(b)}));
+}
+function dayMaps(){
+  const F=['sales','exp','opex','gp','inc','cogs','expected'], D={}, M={};
+  F.forEach(f=>{ D[f]={}; M[f]={}; });
+  const add=(f,k,v)=>{ D[f][k]=(D[f][k]||0)+v; const m=k.slice(0,7); M[f][m]=(M[f][m]||0)+v; };
+  S.sales.forEach(s=>{ add('sales',s.date,s.total); add('gp',s.date,s.profit); add('cogs',s.date,s.total-s.profit); add('expected',s.date,s.total+(s.adj||0)); });
+  S.expenses.forEach(e=>{ add('exp',e.date,e.amt); if(e.cat!=='Stock purchase') add('opex',e.date,e.amt); });
+  S.income.forEach(e=>add('inc',e.date,e.amt));
+  return {D,M};
+}
+function itemStats(){
+  const m={};
+  S.sales.forEach(s=>(s.items||[]).forEach(i=>{
+    if(i.sold==null||i.listed==null) return;
+    const r=m[i.n]||(m[i.n]={q:0,sold:0,listed:0,cost:0}), pr=S.products.find(p=>p.name===i.n);
+    r.q+=i.q; r.sold+=i.sold*i.q; r.listed+=i.listed*i.q; r.cost+=(i.cost!=null?i.cost:(pr?pr.cost:0))*i.q;
+  }));
+  return S.products.map(p=>{ const r=m[p.name]; return {name:p.name,cost:r?r.cost/r.q:p.cost,expected:r?r.listed/r.q:eff(p),actual:r?r.sold/r.q:0,sold:r?r.q:0}; })
+    .sort((a,b)=>b.sold-a.sold).slice(0,8);
+}
+
+/* ----- SVG charts ----- */
+const CH={};
+function roHTML(id,i){ const c=CH[id]; return `<b>${esc(c.labels[i])}</b>`+c.series.map(s=>`<span><i class="dotc" style="background:${s.color}"></i>${esc(s.name)} <b>${fmt(s.vals[i]||0)}</b></span>`).join(''); }
+function pt(id,i){
+  const c=CH[id]; if(!c) return;
+  const ro=document.getElementById('ro_'+id); if(ro) ro.innerHTML=roHTML(id,i);
+  const g=document.getElementById('gl_'+id); if(g&&c.xs){ g.setAttribute('x1',c.xs[i]); g.setAttribute('x2',c.xs[i]); }
+}
+function lineChart(id,labels,series,h){
+  const W=340,H=h||190,L=40,R=12,T=12,B=26,iw=W-L-R,ih=H-T-B,n=labels.length;
+  let mx=0,mn=0; series.forEach(s=>s.vals.forEach(v=>{ if(v>mx) mx=v; if(v<mn) mn=v; }));
+  if(mx===0&&mn===0) return '<div class="empty">No data for this period yet</div>';
+  mx=niceMax(mx); if(mn<0) mn=-niceMax(-mn);
+  const rg=mx-mn||1, X=i=>L+(n<2?iw/2:i*iw/(n-1)), Y=v=>T+ih-(v-mn)/rg*ih, xs=labels.map((_,i)=>X(i));
+  CH[id]={labels,series,xs};
+  let g='';
+  for(let k=0;k<=4;k++){ const v=mn+rg*k/4, y=Y(v); g+=`<line x1="${L}" x2="${W-R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#E3ECEA"/><text x="${L-6}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#6B7F7A">${short(v)}</text>`; }
+  if(mn<0) g+=`<line x1="${L}" x2="${W-R}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="#9FB3AE"/>`;
+  const step=Math.ceil(n/6); let xl='';
+  labels.forEach((lb,i)=>{ if((n-1-i)%step===0) xl+=`<text x="${xs[i].toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="9.5" fill="#6B7F7A">${esc(lb)}</text>`; });
+  const lines=series.map(s=>{
+    const d=s.vals.map((v,i)=>(i?'L':'M')+xs[i].toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+    const dots=n<=16?s.vals.map((v,i)=>`<circle cx="${xs[i].toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="#fff" stroke="${s.color}" stroke-width="2"/>`).join(''):'';
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+  }).join('');
+  const bw=n<2?iw:iw/(n-1);
+  const hits=xs.map((x,i)=>`<rect x="${(x-bw/2).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${ih}" fill="transparent" style="cursor:pointer" onclick="pt('${id}',${i})" onmouseover="pt('${id}',${i})"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Line chart">${g}${xl}${lines}<line id="gl_${id}" x1="${xs[n-1]}" x2="${xs[n-1]}" y1="${T}" y2="${T+ih}" stroke="#10241F" stroke-opacity=".28" stroke-dasharray="3 3"/>${hits}</svg><div class="ro" id="ro_${id}">${roHTML(id,n-1)}</div>`;
+}
+function barChart(id,labels,series){
+  const W=340,H=210,L=40,R=8,T=12,B=40,iw=W-L-R,ih=H-T-B,n=labels.length;
+  let mx=0; series.forEach(s=>s.vals.forEach(v=>{ if(v>mx) mx=v; }));
+  if(!mx||!n) return '<div class="empty">No items yet</div>';
+  mx=niceMax(mx); CH[id]={labels,series};
+  const gw=iw/n, bw=Math.min(20,(gw-10)/series.length), Y=v=>T+ih-v/mx*ih;
+  let g='';
+  for(let k=0;k<=4;k++){ const v=mx*k/4, y=Y(v); g+=`<line x1="${L}" x2="${W-R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#E3ECEA"/><text x="${L-6}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="#6B7F7A">${short(v)}</text>`; }
+  let bars='',xl='';
+  labels.forEach((lb,i)=>{
+    const x0=L+gw*i+(gw-bw*series.length)/2;
+    series.forEach((s,j)=>{ const v=s.vals[i]||0; if(v>0) bars+=`<rect x="${(x0+bw*j).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${(T+ih-Y(v)).toFixed(1)}" rx="3" fill="${s.color}"/>`; });
+    xl+=`<text x="${(L+gw*i+gw/2).toFixed(1)}" y="${H-B+15}" text-anchor="middle" font-size="9.5" fill="#6B7F7A">${esc(lb.length>9?lb.slice(0,8)+'…':lb)}</text>`;
+    bars+=`<rect x="${(L+gw*i).toFixed(1)}" y="${T}" width="${gw.toFixed(1)}" height="${ih}" fill="transparent" style="cursor:pointer" onclick="pt('${id}',${i})" onmouseover="pt('${id}',${i})"/>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Bar chart">${g}${bars}${xl}</svg><div class="ro" id="ro_${id}">${roHTML(id,0)}</div>`;
+}
+const legend=items=>`<div style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--mut);margin:2px 0 6px">${items.map(x=>`<span><i class="dotc" style="background:${x[1]}"></i>${x[0]}</span>`).join('')}</div>`;
+const gpill=g=>g===null?'':`<small class="${g>=0?'pos':'neg'}" style="display:block;margin-top:2px">${g>=0?'▲ ':'▼ '}${Math.abs(Math.round(g))}% vs before</small>`;
+
+function analytics(){
+  if(!S.an) S.an=defAn(); const A=S.an;
+  if(!GROUPS[A.range].includes(A.group)) A.group=GROUPS[A.range][0];
+  const {D,M}=dayMaps();
+  const start=rangeStart(A.range), end=today(), bk=buckets(start,end,A.group);
+  const dayProfit=k=>(D.gp[k]||0)+(D.inc[k]||0)-(D.opex[k]||0);
+  const SER={sales:bk.map(b=>sum(b.days,k=>D.sales[k]||0)),expenses:bk.map(b=>sum(b.days,k=>D.exp[k]||0)),profit:bk.map(b=>sum(b.days,dayProfit))};
+  const NAMES={sales:'Sales',expenses:'Expenses',profit:'Profit'};
+  const tot={sales:sum(SER.sales,v=>v),expenses:sum(SER.expenses,v=>v),profit:sum(SER.profit,v=>v)};
+  const nDays=sum(bk,b=>b.days.length), pS=addDays(start,-nDays), pE=addDays(start,-1);
+  let prev=0; for(let k=pS;k<=pE;k=addDays(k,1)) prev+=D.sales[k]||0;
+  const gr=prev?((tot.sales-prev)/prev*100):null;
+  const chip=(on,fn,txt)=>`<span class="opt ${on?'on':''}" onclick="${fn}">${txt}</span>`;
+
+  // monthly
+  const ml=monthList(A.months), mlab=ml.map(m=>mLab(m+'-01'));
+  const mS=ml.map(m=>M.sales[m]||0), mE=ml.map(m=>M.exp[m]||0), mO=ml.map(m=>M.opex[m]||0);
+  const nm=ml.length, lastFull=mS[nm-2], before=mS[nm-3];
+  const mg=before?((lastFull-before)/before*100):null;
+  const bi=mS.reduce((b,v,i)=>v>mS[b]?i:b,0), avg=sum(mS,v=>v)/nm;
+  const cs=monthsAgoKey(A.months-1), cat={};
+  S.expenses.filter(e=>e.date>=cs).forEach(e=>cat[e.cat]=(cat[e.cat]||0)+e.amt);
+  const cats=Object.entries(cat).sort((a,b)=>b[1]-a[1]), cmax=cats.length?cats[0][1]:1, ctot=sum(cats,c=>c[1]);
+
+  // cost vs price
+  const cM=ml.map(m=>M.cogs[m]||0), eM=ml.map(m=>M.expected[m]||0);
+  const tE=sum(eM,v=>v), tA=sum(mS,v=>v), tC=sum(cM,v=>v);
+  const items=itemStats();
+  const cmpChart=A.cmp==='time'
+    ? legend([['Cost of goods',AC.cost],['Expected (listed) revenue',AC.expected],['Actual revenue',AC.actual]])+lineChart('cc',mlab,[{name:'Cost of goods',color:AC.cost,vals:cM},{name:'Expected',color:AC.expected,vals:eM},{name:'Actual',color:AC.actual,vals:mS}])
+    : legend([['Cost price',AC.cost],['Expected price (listed)',AC.expected],['Actual price (avg sold)',AC.actual]])+barChart('cb',items.map(i=>i.name),[{name:'Cost',color:AC.cost,vals:items.map(i=>i.cost)},{name:'Expected',color:AC.expected,vals:items.map(i=>i.expected)},{name:'Actual',color:AC.actual,vals:items.map(i=>i.actual)}]);
+
+  return `
+  <div class="card"><h3>Business growth <span style="font-weight:500">${RANGES.find(r=>r[0]===A.range)[1]}</span></h3>
+    <div class="lbl" style="margin-top:0">Time range</div><div class="opts">${RANGES.map(r=>chip(A.range===r[0],`setRange('${r[0]}')`,r[1])).join('')}</div>
+    <div class="lbl">Group by</div><div class="opts">${GROUPS[A.range].map(g=>chip(A.group===g,`setGroup('${g}')`,GNAME[g])).join('')}</div>
+    <div class="lbl">Show on graph</div><div class="opts">${['sales','expenses','profit'].map(m=>{ const on=A.metrics.includes(m); return `<span class="opt" style="${on?`background:${AC[m]};border-color:${AC[m]};color:#fff`:''}" onclick="togMetric('${m}')">${on?'':`<i class="dotc" style="background:${AC[m]}"></i>`}${NAMES[m]}</span>`; }).join('')}</div>
+    <div class="grid3" style="margin:14px 0 8px">
+      <div class="stat"><small>Sales</small><b>UGX ${short(tot.sales)}</b>${gpill(gr)}</div>
+      <div class="stat"><small>Expenses</small><b>UGX ${short(tot.expenses)}</b></div>
+      <div class="stat"><small>Profit</small><b class="${tot.profit>=0?'pos':'neg'}">UGX ${short(tot.profit)}</b></div>
+    </div>
+    ${lineChart('cg',bk.map(b=>b.label),A.metrics.map(m=>({name:NAMES[m],color:AC[m],vals:SER[m]})))}
+  </div>
+
+  <div class="card"><h3>Monthly charts</h3>
+    <div class="opts">${chip(A.months===6,'setMonths(6)','Last 6 months')}${chip(A.months===12,'setMonths(12)','Last 12 months')}</div>
+    <small style="display:block;color:var(--mut);font-size:11.5px;margin-top:8px">Applies to the three charts below. The current month is still in progress.</small>
+  </div>
+
+  <div class="card"><h3>Sales per month</h3>
+    ${lineChart('cm',mlab,[{name:'Sales',color:AC.sales,vals:mS}])}
+    <div class="grid3" style="margin-top:12px">
+      <div class="stat"><small>Best month</small><b>${mlab[bi]}</b><small>UGX ${short(mS[bi])}</small></div>
+      <div class="stat"><small>Monthly average</small><b>UGX ${short(avg)}</b></div>
+      <div class="stat"><small>Last full month</small><b>UGX ${short(lastFull||0)}</b>${gpill(mg)}</div>
+    </div>
+  </div>
+
+  <div class="card"><h3>Expense trend</h3>
+    ${legend([['Total spent',AC.expenses],['Running costs (no stock purchases)',AC.cost]])}
+    ${lineChart('ce',mlab,[{name:'Total spent',color:AC.expenses,vals:mE},{name:'Running costs',color:AC.cost,vals:mO}])}
+    <div class="lbl">Where the money went</div>
+    ${cats.map(c=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>${esc(c[0])}</b><span>${fmt(c[1])} · ${Math.round(c[1]/ctot*100)}%</span></div><div class="bar"><i style="width:${c[1]/cmax*100}%;background:${AC.expenses}"></i></div></div>`).join('')||'<div class="empty">No expenses recorded</div>'}
+  </div>
+
+  <div class="card"><h3>Cost vs expected vs actual price</h3>
+    <div class="opts" style="margin-bottom:10px">${chip(A.cmp==='item','setCmp(\'item\')','By item')}${chip(A.cmp==='time','setCmp(\'time\')','Over time')}</div>
+    <div class="grid3" style="margin-bottom:6px">
+      <div class="stat"><small>Expected revenue</small><b>UGX ${short(tE)}</b></div>
+      <div class="stat"><small>Actual revenue</small><b>UGX ${short(tA)}</b></div>
+      <div class="stat"><small>Price cuts given</small><b class="${tE-tA>0?'neg':''}">UGX ${short(Math.max(0,tE-tA))}</b></div>
+    </div>
+    <small style="display:block;color:var(--mut);font-size:11.5px;margin-bottom:8px">${A.cmp==='time'?'Last '+A.months+' months. Expected = what sales would bring at listed prices.':'Average price per item across sales recorded item by item.'}</small>
+    ${cmpChart}
+    ${A.cmp==='item'?`<div style="margin-top:10px">${items.map(i=>{ const ref=i.sold?i.actual:i.expected, mg2=ref?(ref-i.cost)/ref*100:0; return `<div class="row"><div class="grow"><b>${esc(i.name)}</b><small>Cost ${fmt(i.cost)} · Expected ${fmt(i.expected)} · ${i.sold?'Actual '+fmt(i.actual):'Not sold yet'}</small></div><span class="tag ${mg2<0?'red':''}">${Math.round(mg2)}% margin</span></div>`; }).join('')}</div>`:''}
+  </div>
+  <small style="display:block;color:var(--mut);font-size:11.5px;line-height:1.5;padding:0 4px">Profit = sales minus cost of goods, minus running costs, plus other income. Stock purchases are not subtracted again because the cost of each item is already counted when it sells.</small>`;
+}
+
+/* ---------- RECEIPTS ---------- */
+const PAYS=['Cash','MTN MoMo','Airtel Money','Card'];
+let rc=null;
+const rno=s=>'R-'+String(s.id).padStart(4,'0');
+const getSale=id=>S.sales.find(x=>x.id===id);
+function waNum(p){ let d=String(p||'').replace(/\D/g,''); if(d.startsWith('0')) d='256'+d.slice(1); return d; }
+function rdate(sl){ const d=sl.ts?new Date(sl.ts):new Date(sl.date+'T12:00'); return sl.ts?d.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
+function rItems(sl){
+  if(sl.items&&sl.items.length&&sl.items.every(i=>i.sold!=null)) return sl.items.map(i=>({n:i.n,q:i.q,unit:i.sold,listed:i.listed!=null?i.listed:i.sold}));
+  return [{n:'Goods sold',q:1,unit:sl.total,listed:sl.total+(sl.adj||0)}];
+}
+function saleDoneSheet(id){
+  const sl=getSale(id);
+  openSheet(`<div style="text-align:center"><div class="bigav" style="width:64px;height:64px">${ic('check',34)}</div><h2 style="margin-top:10px">Sale recorded</h2><div style="font-size:26px;font-weight:800;margin:4px 0">${fmt(sl.total)}</div>${sl.adj>0?`<small style="color:var(--amber)">${fmt(sl.adj)} below listed price noted</small>`:'<small style="color:var(--mut)">Stock updated</small>'}</div>
+  <button class="btn" style="margin-top:18px" onclick="receiptForm(${id})">${ic('receipt',16)} Generate receipt</button>
+  <button class="btn ghost" style="margin-top:8px" onclick="closeSheet()">Not now</button>`);
+}
+function receiptForm(id){
+  const sl=getSale(id); rc={id,name:(sl.cust&&sl.cust.name)||'',phone:(sl.cust&&sl.cust.phone)||'',pay:sl.pay||'Cash',canvas:null,url:null};
+  drawRcForm();
+}
+function drawRcForm(){
+  const sl=getSale(rc.id);
+  openSheet(`<h2>Receipt ${rno(sl)}</h2><small style="color:var(--mut)">${fmt(sl.total)} · ${rdate(sl)}</small>
+  <label>Customer name (optional)</label><input id="rc_name" value="${esc(rc.name)}" placeholder="e.g. Sarah">
+  <label>Customer WhatsApp number (optional)</label><input id="rc_phone" type="tel" value="${esc(rc.phone)}" placeholder="+256 7XX XXX XXX">
+  <label>Paid with</label><div class="opts">${PAYS.map((p,i)=>`<span class="opt ${rc.pay===p?'on':''}" onclick="setPay(${i})">${p}</span>`).join('')}</div>
+  <button class="btn" style="margin-top:16px" onclick="makeReceipt()">Create receipt</button>`);
+}
+function rcRead(){ const n=document.getElementById('rc_name'), p=document.getElementById('rc_phone'); if(n) rc.name=n.value.trim(); if(p) rc.phone=p.value.trim(); }
+function setPay(i){ rcRead(); rc.pay=PAYS[i]; drawRcForm(); }
+function makeReceipt(){
+  rcRead(); const sl=getSale(rc.id); sl.cust={name:rc.name,phone:rc.phone}; sl.pay=rc.pay; save();
+  openSheet('<div class="empty">Creating your receipt…</div>');
+  buildReceipt(sl).then(c=>{ rc.canvas=c; rc.url=c.toDataURL('image/png'); drawRcPreview(); });
+}
+function drawRcPreview(){
+  const sl=getSale(rc.id);
+  openSheet(`<h2>Receipt ready</h2>
+  <img src="${rc.url}" alt="Receipt ${rno(sl)}" style="width:100%;border-radius:12px;border:1px solid var(--line);margin:10px 0 12px">
+  <button class="btn" onclick="shareReceipt()">${ic('share',16)} Share (WhatsApp, Instagram, more)</button>
+  <div style="display:flex;gap:8px;margin-top:8px"><button class="btn ghost" onclick="waReceipt()">${ic('whatsapp',16)} WhatsApp text</button><button class="btn ghost" onclick="dlReceipt()">${ic('download',16)} Download</button></div>
+  <button class="link" style="margin-top:10px;width:100%" onclick="closeSheet()">Done</button>`);
+}
+function receiptText(sl){
+  const P=S.profile||{}, its=rItems(sl);
+  return `*Receipt ${rno(sl)}* from ${S.stall.name}\n${rdate(sl)}\n\n`+its.map(i=>`${i.q} x ${i.n}  ${fmt(i.unit*i.q)}`).join('\n')+(sl.adj>0?`\nYou saved ${fmt(sl.adj)}`:'')+`\n\n*Total: ${fmt(sl.total)}*\nPaid with ${sl.pay||'Cash'}\n\nThank you for shopping with ${S.stall.name}!`+(P.phone?`\nCall or WhatsApp: ${P.phone}`:'');
+}
+function waReceipt(){
+  const sl=getSale(rc.id), n=waNum(sl.cust&&sl.cust.phone);
+  window.open('https://wa.me/'+(n?n:'')+'?text='+encodeURIComponent(receiptText(sl)),'_blank');
+}
+function dlReceipt(){
+  const sl=getSale(rc.id), a=document.createElement('a');
+  a.href=rc.url; a.download='receipt-'+rno(sl)+'.png'; document.body.appendChild(a); a.click(); a.remove();
+  toast('Receipt downloaded');
+}
+function shareReceipt(){
+  const sl=getSale(rc.id);
+  rc.canvas.toBlob(async blob=>{
+    const file=new File([blob],'receipt-'+rno(sl)+'.png',{type:'image/png'});
+    try{
+      if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:'Receipt '+rno(sl),text:'Receipt from '+S.stall.name});
+      else { dlReceipt(); toast('Saved. Attach it in WhatsApp or Instagram.'); }
+    }catch(e){ /* share cancelled */ }
+  },'image/png');
+}
+function loadImg(src){ return new Promise(res=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; }); }
+async function buildReceipt(sl){
+  const P=S.profile||{}, color=S.stall.color||'#0F766E', W=720, pad=44, FONT='system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+  const logo=P.logo?await loadImg(P.logo):null, its=rItems(sl), adj=sl.adj>0?sl.adj:0;
+  const socials=[P.instagram&&'Instagram @'+P.instagram,P.facebook&&'Facebook '+P.facebook,P.tiktok&&'TikTok @'+P.tiktok,P.whatsapp&&'WhatsApp '+P.whatsapp].filter(Boolean);
+  const H=190+46+60+(sl.cust&&sl.cust.name?36:0)+72+its.reduce((a,i)=>a+84+(i.listed>i.unit?30:0),0)+30+(adj?84:0)+90+50+60+(S.stall.tagline?40:0)+(socials.length?Math.ceil(socials.length/2)*32+10:0)+70;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const c=cv.getContext('2d');
+  const T=(t,x,y,o)=>{ o=o||{}; c.font=(o.style||'')+' '+(o.size||22)+'px '+FONT; c.fillStyle=o.color||'#10241F'; c.textAlign=o.align||'left'; c.fillText(t,x,y); };
+  const fit=(t,maxW,font)=>{ c.font=font; if(c.measureText(t).width<=maxW) return t; while(t.length>1&&c.measureText(t+'…').width>maxW) t=t.slice(0,-1); return t+'…'; };
+  const dash=y=>{ c.strokeStyle='#CBD9D5'; c.lineWidth=2; c.setLineDash([8,8]); c.beginPath(); c.moveTo(pad,y); c.lineTo(W-pad,y); c.stroke(); c.setLineDash([]); };
+  c.fillStyle='#fff'; c.fillRect(0,0,W,H);
+  c.fillStyle=color; c.fillRect(0,0,W,190);
+  c.save(); c.beginPath(); c.arc(pad+50,95,50,0,Math.PI*2); c.closePath(); c.fillStyle='rgba(255,255,255,.95)'; c.fill(); c.clip();
+  if(logo){ const m=Math.min(logo.width,logo.height); c.drawImage(logo,(logo.width-m)/2,(logo.height-m)/2,m,m,pad,45,100,100); }
+  c.restore();
+  if(!logo) T(initials(P.businessName||S.stall.name),pad+50,108,{size:34,style:'bold',color:color,align:'center'});
+  const tx=pad+126, mw=W-tx-pad;
+  T(fit(S.stall.name,mw,'bold 38px '+FONT),tx,92,{size:38,style:'bold',color:'#fff'});
+  T(fit([P.category,P.location].filter(Boolean).join(' · '),mw,'20px '+FONT),tx,126,{size:20,color:'rgba(255,255,255,.9)'});
+  if(P.phone) T(P.phone,tx,156,{size:20,color:'rgba(255,255,255,.9)'});
+  let y=190+60;
+  T('RECEIPT',pad,y,{size:30,style:'bold',color:color}); T(rno(sl),W-pad,y,{size:24,color:'#6B7F7A',align:'right'});
+  y+=46; T('Date',pad,y,{size:21,color:'#6B7F7A'}); T(rdate(sl),W-pad,y,{size:21,align:'right'});
+  if(sl.cust&&sl.cust.name){ y+=36; T('Customer',pad,y,{size:21,color:'#6B7F7A'}); T(fit(sl.cust.name,380,'21px '+FONT),W-pad,y,{size:21,align:'right'}); }
+  y+=36; T('Paid with',pad,y,{size:21,color:'#6B7F7A'}); T(sl.pay||'Cash',W-pad,y,{size:21,align:'right'});
+  y+=30; dash(y); y+=18;
+  its.forEach(i=>{
+    y+=38; T(fit(i.n,W-2*pad-200,'bold 25px '+FONT),pad,y,{size:25,style:'bold'}); T(fmt(i.unit*i.q),W-pad,y,{size:25,style:'bold',align:'right'});
+    y+=32; T(i.q+' × '+fmt(i.unit),pad,y,{size:20,color:'#6B7F7A'});
+    if(i.listed>i.unit){ y+=30; T('Special price (was '+fmt(i.listed)+')',pad,y,{size:19,color:'#16A34A'}); }
+    y+=14;
+  });
+  y+=12; dash(y);
+  if(adj){ y+=44; T('Subtotal',pad,y,{size:22,color:'#6B7F7A'}); T(fmt(sl.total+adj),W-pad,y,{size:22,align:'right'}); y+=40; T('You saved',pad,y,{size:22,color:'#16A34A'}); T('− '+fmt(adj),W-pad,y,{size:22,color:'#16A34A',align:'right'}); }
+  y+=58; T('TOTAL',pad,y,{size:30,style:'bold'}); T(fmt(sl.total),W-pad,y,{size:36,style:'bold',color:color,align:'right'});
+  y+=70; T('Thank you for shopping with '+fit(S.stall.name,420,'bold 24px '+FONT)+'!',W/2,y,{size:24,style:'bold',align:'center'});
+  if(S.stall.tagline){ y+=40; T('“'+fit(S.stall.tagline,560,'italic 21px '+FONT)+'”',W/2,y,{size:21,style:'italic',color:'#6B7F7A',align:'center'}); }
+  for(let i=0;i<socials.length;i+=2){ y+=(i===0?42:32); T(socials.slice(i,i+2).join('   ·   '),W/2,y,{size:19,color:'#3F5953',align:'center'}); }
+  y+=56; T('Made with Quonnect Vendor',W/2,y,{size:17,color:'#9FB3AE',align:'center'});
+  return cv;
+}
+
+/* ---------- ACCOUNT, LOGIN & PROFILE ---------- */
+const BCATS=['Fashion & clothing','Cosmetics & beauty','Jewellery & accessories','Shoes & bags','Food & produce','Crafts & art','Home & decor','Other'];
+const SOC=[['instagram','Instagram','instagram',h=>'https://instagram.com/'+encodeURIComponent(h),h=>'@'+h],['facebook','Facebook','facebook',h=>'https://facebook.com/'+encodeURIComponent(h),h=>h],['tiktok','TikTok','tiktok',h=>'https://tiktok.com/@'+encodeURIComponent(h),h=>'@'+h],['whatsapp','WhatsApp','whatsapp',h=>'https://wa.me/'+h.replace(/\D/g,''),h=>h]];
+// Placeholder hash for the demo only. The live app uses Supabase phone/email auth instead.
+function hash(t){ let h=5381; for(const c of 'qv|'+t) h=((h<<5)+h+c.charCodeAt(0))|0; return String(h); }
+const initials = n => String(n||'').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('')||'Q';
+const firstName = () => S.profile&&S.profile.vendorName ? S.profile.vendorName.split(/\s+/)[0] : 'there';
+const avInner = () => S.profile&&S.profile.logo ? `<img src="${S.profile.logo}" alt="">` : esc(initials(S.profile&&S.profile.businessName));
+const emptySu = () => ({step:1,vendorName:'',phone:'',email:'',pw:'',pw2:'',businessName:'',category:'',location:'',motto:'',logo:null,instagram:'',facebook:'',tiktok:'',whatsapp:'',sample:true});
+let authMode = S.account ? 'login' : 'signup';
+let su = emptySu();
+let profileEdit=false, pdraft=null;
+
+function readLogo(inp,cb){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{ const im=new Image(); im.onload=()=>{ const z=256, c=document.createElement('canvas'); c.width=c.height=z; const m=Math.min(im.width,im.height); c.getContext('2d').drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,0,0,z,z); cb(c.toDataURL('image/jpeg',.8)); }; im.src=e.target.result; };
+  r.readAsDataURL(f);
+}
+function onLogo(inp){
+  readLogo(inp,url=>{
+    if(!S.loggedIn){ collect(); su.logo=url; }
+    else if(profileEdit){ syncDraft(); pdraft.logo=url; }
+    else { S.profile.logo=url; toast('Logo updated'); }
+    render();
+  });
+}
+
+/* ----- auth screens ----- */
+const heroHTML=(t,sub)=>`<div class="authhero"><div class="mark">${ic('store',32)}</div><h1 style="font-size:22px">${t}</h1><p style="font-size:13px;opacity:.9;margin-top:4px">${sub}</p></div>`;
+function authView(){ return authMode==='login' ? loginView() : signupView(); }
+function loginView(){
+  return heroHTML('Welcome back','Log in to run your business and your online stall')+`
+  <div class="authbody"><div class="card">
+    <label>Phone number or email</label><input id="li" autocomplete="username" placeholder="+256 7XX XXX XXX or you@example.com">
+    <label>Password</label><input id="lp" type="password" autocomplete="current-password" placeholder="Your password">
+    <div class="err" id="err"></div>
+    <button class="btn" onclick="doLogin()">Log in</button>
+    <div style="display:flex;justify-content:space-between;margin-top:12px">
+      <button class="link" onclick="toast('Password reset by SMS code comes with the live app')">Forgot password?</button>
+      <button class="link" onclick="startSignup()">Create new account</button>
+    </div></div></div>`;
+}
+function doLogin(){
+  const id=$('#li').value.trim().toLowerCase(), pw=$('#lp').value, a=S.account, digits=id.replace(/\D/g,'');
+  const idOk = a && ((id.includes('@') && id===String(a.email).toLowerCase()) || (digits.length>=9 && digits.slice(-9)===String(a.phone).replace(/\D/g,'').slice(-9)));
+  if(!idOk || a.hash!==hash(pw)){ $('#err').textContent='Wrong phone/email or password'; return; }
+  S.loggedIn=true; tab='home'; toast('Logged in'); render();
+}
+function startSignup(){ su=emptySu(); authMode='signup'; render(); }
+function logout(){ S.loggedIn=false; profileEdit=false; authMode='login'; render(); }
+
+function collect(){
+  const map={f_vendor:'vendorName',f_phone:'phone',f_email:'email',f_biz:'businessName',f_loc:'location',f_motto:'motto',f_ig:'instagram',f_fb:'facebook',f_tt:'tiktok',f_wa:'whatsapp'};
+  for(const id in map){ const e=document.getElementById(id); if(e) su[map[id]]=e.value.trim(); }
+  const a=document.getElementById('f_pw'), b=document.getElementById('f_pw2'), c=document.getElementById('f_sample');
+  if(a) su.pw=a.value; if(b) su.pw2=b.value; if(c) su.sample=c.checked;
+}
+function checkStep(n){
+  if(n===1){
+    if(su.vendorName.length<2) return 'Enter your name';
+    if(su.phone.replace(/\D/g,'').length<9) return 'Enter a valid phone number';
+    if(!/^\S+@\S+\.\S+$/.test(su.email)) return 'Enter a valid email';
+    if(su.pw.length<6) return 'Password needs at least 6 characters';
+    if(su.pw!==su.pw2) return 'Passwords do not match';
+  }
+  if(n===2){
+    if(!su.businessName) return 'Enter your business name';
+    if(!su.category) return 'Choose a business category';
+    if(!su.location) return 'Enter your location';
+  }
+  return '';
+}
+function nextStep(){
+  collect(); const e=checkStep(su.step);
+  if(e){ $('#err').textContent=e; return; }
+  if(su.step<3){ su.step++; render(); $('#main').scrollTop=0; } else createAccount();
+}
+function prevStep(){ collect(); if(su.step>1){ su.step--; render(); } else if(S.account){ authMode='login'; render(); } }
+function createAccount(){
+  const h=v=>v.replace(/^@/,'').trim();
+  S.account={phone:su.phone,email:su.email,hash:hash(su.pw)};
+  S.profile={vendorName:su.vendorName,businessName:su.businessName,phone:su.phone,phone2:'',email:su.email,category:su.category,location:su.location,motto:su.motto,logo:su.logo,instagram:h(su.instagram),facebook:h(su.facebook),tiktok:h(su.tiktok),whatsapp:su.whatsapp};
+  S.stall.name=su.businessName; S.stall.tagline=su.motto;
+  if(!su.sample){ S.products=[]; S.sales=[]; S.expenses=[]; S.income=[]; S.budgets={}; S.hist=true; }
+  S.loggedIn=true; tab='home'; cart={}; cartPrice={};
+  toast('Welcome, '+firstName()); render();
+}
+function signupView(){
+  const st=su.step, titles=['Your account','Your business','Social media'];
+  const fld=(id,lab,val,ph,type)=>`<label>${lab}</label><input id="${id}" type="${type||'text'}" value="${esc(val||'')}" placeholder="${ph||''}">`;
+  let body='';
+  if(st===1) body=`${fld('f_vendor','Your full name (vendor name)',su.vendorName,'e.g. Amina Nakato')}${fld('f_phone','Phone number',su.phone,'+256 7XX XXX XXX','tel')}${fld('f_email','Email',su.email,'you@example.com','email')}
+    <label>Password</label><input id="f_pw" type="password" value="${esc(su.pw)}" placeholder="At least 6 characters">
+    <label>Confirm password</label><input id="f_pw2" type="password" value="${esc(su.pw2)}" placeholder="Type it again">`;
+  if(st===2) body=`<div style="text-align:center;margin:4px 0 6px"><label for="flogo" style="display:inline-block;position:relative;cursor:pointer;margin:0"><div class="bigav">${su.logo?`<img src="${su.logo}" alt="">`:ic('camera',30)}</div><span class="camb">${ic('edit',14)}</span></label><div style="font-size:12px;color:var(--mut);margin-top:6px">Add your logo (optional)</div></div>
+    <input type="file" id="flogo" accept="image/*" style="display:none" onchange="onLogo(this)">
+    ${fld('f_biz','Business name',su.businessName,'e.g. Amina Fashions')}
+    <label>Business category</label><div class="opts">${BCATS.map((c,i)=>`<span class="opt ${su.category===c?'on':''}" onclick="catChip(${i})">${c}</span>`).join('')}</div>
+    ${fld('f_loc','Location',su.location,'e.g. Owino Market, Kampala')}
+    ${fld('f_motto','Business theme or motto (optional)',su.motto,'e.g. Quality styles, fair prices')}`;
+  if(st===3) body=`<small style="color:var(--mut);font-size:12px">All optional. You can add or change these later in your profile.</small>
+    ${fld('f_ig','Instagram handle',su.instagram,'handle, without @')}${fld('f_fb','Facebook page',su.facebook,'page name or username')}${fld('f_tt','TikTok handle',su.tiktok,'handle, without @')}${fld('f_wa','WhatsApp number',su.whatsapp,'+256 7XX XXX XXX','tel')}
+    <label style="display:flex;gap:8px;align-items:center;margin-top:16px"><input type="checkbox" id="f_sample" style="width:auto" ${su.sample?'checked':''}> Start with sample stock and sales so I can explore</label>`;
+  return heroHTML('Create your vendor account','Step '+st+' of 3 · '+titles[st-1])+`
+  <div class="authbody"><div class="steps">${[1,2,3].map(n=>`<i class="${n<=st?'on':''}"></i>`).join('')}</div>
+  <div class="card">${body}
+    ${S.account&&st===1?'<small style="display:block;color:var(--amber);margin-top:10px;font-size:11.5px">An account already exists on this device. Creating a new one replaces it.</small>':''}
+    <div class="err" id="err"></div>
+    <div style="display:flex;gap:8px"><button class="btn ghost" onclick="prevStep()">${st===1&&!S.account?'Cancel':'Back'}</button><button class="btn" onclick="nextStep()">${st===3?'Create account':'Next'}</button></div>
+  </div></div>`;
+}
+
+/* ----- profile ----- */
+function editProfile(){ pdraft=JSON.parse(JSON.stringify(S.profile)); profileEdit=true; render(); }
+function cancelEdit(){ profileEdit=false; render(); }
+function syncDraft(){
+  const map={pf_vendor:'vendorName',pf_biz:'businessName',pf_phone:'phone',pf_phone2:'phone2',pf_email:'email',pf_loc:'location',pf_motto:'motto',pf_ig:'instagram',pf_fb:'facebook',pf_tt:'tiktok',pf_wa:'whatsapp'};
+  for(const id in map){ const e=document.getElementById(id); if(e) pdraft[map[id]]=e.value.trim(); }
+}
+function catChip(i){
+  if(!S.loggedIn){ collect(); su.category=BCATS[i]; }
+  else { syncDraft(); pdraft.category=BCATS[i]; }
+  render();
+}
+function saveProfile(){
+  syncDraft(); const d=pdraft;
+  if(!d.vendorName||!d.businessName){ toast('Vendor and business name needed'); return; }
+  if(d.phone.replace(/\D/g,'').length<9){ toast('Enter a valid phone number'); return; }
+  if(!/^\S+@\S+\.\S+$/.test(d.email)){ toast('Enter a valid email'); return; }
+  ['instagram','facebook','tiktok'].forEach(k=>d[k]=d[k].replace(/^@/,'').trim());
+  S.profile=JSON.parse(JSON.stringify(d));
+  S.account.phone=d.phone; S.account.email=d.email;
+  S.stall.name=d.businessName; S.stall.tagline=d.motto;
+  profileEdit=false; toast('Profile updated everywhere'); render();
+}
+function pwSheet(){
+  openSheet(`<h2>Change password</h2><label>Current password</label><input id="pw0" type="password"><label>New password</label><input id="pw1" type="password" placeholder="At least 6 characters"><label>Confirm new password</label><input id="pw2" type="password">
+  <div class="err" id="perr"></div><button class="btn" onclick="savePw()">Update password</button>`);
+}
+function savePw(){
+  if(S.account.hash!==hash($('#pw0').value)){ $('#perr').textContent='Current password is wrong'; return; }
+  if($('#pw1').value.length<6){ $('#perr').textContent='New password needs at least 6 characters'; return; }
+  if($('#pw1').value!==$('#pw2').value){ $('#perr').textContent='Passwords do not match'; return; }
+  S.account.hash=hash($('#pw1').value); closeSheet(); toast('Password updated'); render();
+}
+function profile(){
+  const P=profileEdit?pdraft:S.profile;
+  const hero=`<div class="card" style="text-align:center;padding:20px 14px">
+    <label for="plogo" style="display:inline-block;position:relative;cursor:pointer;margin:0"><div class="bigav">${P.logo?`<img src="${P.logo}" alt="">`:esc(initials(P.businessName))}</div><span class="camb">${ic('camera',15)}</span></label>
+    <input type="file" id="plogo" accept="image/*" style="display:none" onchange="onLogo(this)">
+    <h2 style="font-size:19px;margin-top:10px">${esc(P.businessName)}</h2>
+    ${P.motto?`<p style="font-size:13px;color:var(--mut);font-style:italic;margin-top:3px">&ldquo;${esc(P.motto)}&rdquo;</p>`:''}
+    <div style="margin-top:8px"><span class="tag">${esc(P.category)}</span></div>
+    ${P.location?`<p style="font-size:12.5px;color:var(--mut);margin-top:8px;display:flex;gap:4px;justify-content:center;align-items:center">${ic('pin',14)} ${esc(P.location)}</p>`:''}
+  </div>`;
+  if(!profileEdit){
+    const row=(icon,label,val,href)=>`<div class="row"><div class="emo">${ic(icon,20)}</div><div class="grow"><small>${label}</small>${val?(href?`<a href="${href}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><b>${esc(val)}</b></a>`:`<b>${esc(val)}</b>`):'<b style="color:var(--mut);font-weight:500">Not added</b>'}</div></div>`;
+    return hero+`
+    <button class="btn" onclick="editProfile()" style="margin-bottom:12px">${ic('edit',16)} Edit profile</button>
+    <div class="card"><h3>Contact</h3>
+      ${row('user','Vendor name',P.vendorName)}${row('phone','Phone',P.phone,P.phone?'tel:'+P.phone.replace(/[^\d+]/g,''):'')}${row('phone','Second phone',P.phone2,P.phone2?'tel:'+P.phone2.replace(/[^\d+]/g,''):'')}${row('mail','Email',P.email,P.email?'mailto:'+P.email:'')}
+    </div>
+    <div class="card"><h3>Business</h3>
+      ${row('tag','Category',P.category)}${row('pin','Location',P.location)}${row('quote','Theme / motto',P.motto)}
+    </div>
+    <div class="card"><h3>Social media</h3>
+      ${SOC.map(x=>row(x[2],x[1],P[x[0]]?x[4](P[x[0]]):'',P[x[0]]?x[3](P[x[0]]):'')).join('')}
+    </div>
+    <div class="card"><h3>Account</h3>
+      <button class="btn ghost" style="margin-bottom:8px" onclick="pwSheet()">${ic('lock',16)} Change password</button>
+      <button class="btn out" onclick="logout()">${ic('logout',16)} Log out</button>
+    </div>`;
+  }
+  const fld=(id,lab,val,ph,type)=>`<label>${lab}</label><input id="${id}" type="${type||'text'}" value="${esc(val||'')}" placeholder="${ph||''}">`;
+  return hero+`
+  <div class="card"><h3>Contact</h3>${fld('pf_vendor','Vendor name',P.vendorName)}${fld('pf_phone','Phone number',P.phone,'+256 7XX XXX XXX','tel')}${fld('pf_phone2','Second phone number (optional)',P.phone2,'+256 7XX XXX XXX','tel')}${fld('pf_email','Email',P.email,'you@example.com','email')}</div>
+  <div class="card"><h3>Business</h3>${fld('pf_biz','Business name',P.businessName)}
+    <label>Business category</label><div class="opts">${BCATS.map((c,i)=>`<span class="opt ${P.category===c?'on':''}" onclick="catChip(${i})">${c}</span>`).join('')}</div>
+    ${fld('pf_loc','Location',P.location,'e.g. Owino Market, Kampala')}${fld('pf_motto','Business theme or motto',P.motto,'e.g. Quality styles, fair prices')}</div>
+  <div class="card"><h3>Social media</h3>${fld('pf_ig','Instagram handle',P.instagram,'handle, without @')}${fld('pf_fb','Facebook page',P.facebook,'page name or username')}${fld('pf_tt','TikTok handle',P.tiktok,'handle, without @')}${fld('pf_wa','WhatsApp number',P.whatsapp,'+256 7XX XXX XXX','tel')}</div>
+  <div style="display:flex;gap:8px"><button class="btn ghost" onclick="cancelEdit()">Cancel</button><button class="btn" onclick="saveProfile()">Save changes</button></div>`;
+}
+
+/* ---------- HOME ---------- */
+let hRange='7d', hMonth=null, hFrom=null, hTo=null;
+const mdLab=k=>{ const d=new Date(k+'T12:00'); return MON[d.getMonth()]+' '+d.getDate(); };
+const wdLab=k=>new Date(k+'T12:00').toLocaleString('en',{weekday:'short'});
+const pctChg=(a,b)=>b?((a-b)/Math.abs(b)*100):null;
+const trendPill=(g,suffix,inv)=>{ if(g===null||!isFinite(g)) return '<span class="tr" style="color:var(--mut)">&nbsp;</span>'; const up=g>=0, good=inv?!up:up; return `<span class="tr ${good?'':'bad'}">${up?'▲ +':'▼ −'}${Math.abs(Math.round(g))}% ${suffix}</span>`; };
+const longMonth=m=>new Date(m+'-15T12:00').toLocaleString('en',{month:'long'});
+function setHRange(r){ hRange=r; if(r==='custom'&&!hFrom){ hTo=today(); hFrom=daysAgo(13); } render(); }
+function setHDates(){ const f=$('#hf').value, t=$('#ht').value; if(!f||!t) return; hFrom=f<=t?f:t; hTo=f<=t?t:f; if((new Date(hTo)-new Date(hFrom))/86400000>59) hFrom=addDays(hTo,-59); render(); }
+function setHMonth(v){ hMonth=v; render(); }
+function niceStep(raw){ const p=Math.pow(10,Math.floor(Math.log10(raw))), n=raw/p; return (n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*p; }
+
+function profitBars(days,vals){
+  const W=340,H=236,L=66,R=8,T=26,B=44,iw=W-L-R,ih=H-T-B,n=days.length;
+  let mx=Math.max(...vals,0), mn=Math.min(...vals,0);
+  if(mx===0&&mn===0) return '<div class="empty">No profit recorded for this period yet</div>';
+  const st=niceStep(Math.max(mx,-mn)/4);
+  mx=Math.ceil(mx/st)*st; mn=-Math.ceil(-mn/st)*st;
+  const rg=mx-mn, Y=v=>T+ih-(v-mn)/rg*ih, gw=iw/n, bw=Math.max(2,Math.min(30,gw*0.7));
+  CH.hb={labels:days.map(k=>mdLab(k)+' ('+wdLab(k)+')'),series:[{name:'Net profit',color:'#0F8A4D',vals}],xs:null};
+  let g='';
+  for(let v=mn;v<=mx+st/2;v+=st){ const y=Y(v); g+=`<line x1="${L}" x2="${W-R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#E4ECE7"/><text x="${L-6}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#6B7F7A">UGX ${Math.round(v).toLocaleString('en-US')}</text>`; }
+  const few=n<=8, step=Math.ceil(n/6); let bars='',xl='';
+  vals.forEach((v,i)=>{
+    const cx=L+gw*i+gw/2, y0=Y(0), y1=Y(v), top=Math.min(y0,y1), h=Math.max(1,Math.abs(y0-y1));
+    bars+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(5,bw/2).toFixed(1)}" fill="${v<0?'#EF4444':'url(#bgrad)'}"/>`;
+    if(few) bars+=`<text x="${cx.toFixed(1)}" y="${(v<0?y1+12:y1-6).toFixed(1)}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#10241F">UGX ${short(v)}</text>`;
+    if(few) xl+=`<text x="${cx.toFixed(1)}" y="${H-B+16}" text-anchor="middle" font-size="9" fill="#6B7F7A">${mdLab(days[i])}</text><text x="${cx.toFixed(1)}" y="${H-B+28}" text-anchor="middle" font-size="9" fill="#6B7F7A">${wdLab(days[i])}</text>`;
+    else if((n-1-i)%step===0) xl+=`<text x="${(i===n-1?cx+bw/2:cx).toFixed(1)}" y="${H-B+16}" text-anchor="${i===n-1?'end':'middle'}" font-size="9" fill="#6B7F7A">${mdLab(days[i])}</text>`;
+    bars+=`<rect x="${(L+gw*i).toFixed(1)}" y="${T}" width="${gw.toFixed(1)}" height="${ih}" fill="transparent" style="cursor:pointer" onclick="pt('hb',${i})" onmouseover="pt('hb',${i})"/>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Daily profit bar chart"><defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style="stop-color:color-mix(in srgb,var(--accent) 55%,#fff)"/><stop offset="100%" style="stop-color:var(--accent)"/></linearGradient></defs>${g}${bars}${xl}</svg>${few?'':`<div class="ro" id="ro_hb">${roHTML('hb',n-1)}</div>`}`;
+}
+
+function txList(){
+  const L=[], tm=ts=>ts?new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}):'';
+  S.sales.forEach(x=>L.push({ic:'cart',date:x.date,ts:x.ts||0,id:x.id,title:'Sales'+((x.items||[]).length?' – '+x.items.map(i=>i.n).slice(0,2).join(', '):''),cat:'Sales',amt:x.total,time:tm(x.ts)}));
+  const EI={'Stock purchase':'box','Transport':'car','Food':'utensils','Stall fee':'store','Packaging':'box','Airtime/Data':'mobile'};
+  S.expenses.forEach(x=>L.push({ic:EI[x.cat]||'wallet',date:x.date,ts:0,id:x.id,title:x.note||x.cat,cat:x.cat,amt:-x.amt,time:''}));
+  S.income.forEach(x=>L.push({ic:'mobile',date:x.date,ts:0,id:x.id,title:x.src,cat:'Other Income',amt:x.amt,time:''}));
+  return L.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(b.ts-a.ts)||(b.id-a.id));
+}
+function txRows(list){
+  return list.map(x=>{ const d=new Date(x.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return `<div class="tx"><div class="ci sm">${ic(x.ic,18)}</div><div class="grow"><b class="l">${esc(x.title)}</b><small>${x.cat!==x.title&&x.cat!=='Sales'?esc(x.cat)+' · ':''}${d}${x.time?' · '+x.time:''}</small></div><b class="a ${x.amt>=0?'pos':'neg'}">${x.amt>=0?'+':'−'} ${fmt(Math.abs(x.amt))}</b></div>`; }).join('')||'<div class="empty">No transactions yet</div>';
+}
+function allTx(){ openSheet(`<h2>All transactions</h2><small style="color:var(--mut)">Latest 40 entries</small><div style="margin-top:8px">${txRows(txList().slice(0,40))}</div>`); }
+
+function home(){
+  const {D,M}=dayMaps(), t=today(), y=addDays(t,-1), ym=monthKey(), sel=hMonth||ym;
+  const net=k=>(D.gp[k]||0)+(D.inc[k]||0)-(D.opex[k]||0);
+  const netM=m=>(M.gp[m]||0)+(M.inc[m]||0)-(M.opex[m]||0);
+  const sT=D.sales[t]||0, sY=D.sales[y]||0, eT=D.exp[t]||0, eY=D.exp[y]||0, pT=net(t), pY=net(y);
+  const dom=parseInt(t.slice(8)), pm=monthsAgoKey(1).slice(0,7);
+  let netPrev=0; for(let i=1;i<=dom;i++) netPrev+=net(pm+'-'+String(i).padStart(2,'0'));
+  const netNow=netM(ym);
+  const mSales=M.sales[sel]||0, mGp=M.gp[sel]||0, mInc=M.inc[sel]||0, mExp=M.exp[sel]||0;
+  const mDisc=sum(S.sales.filter(x=>x.date.startsWith(sel)),x=>Math.max(0,x.adj||0));
+  const bud=S.budgets||{}, bcats=Object.keys(bud), tb=sum(bcats,c=>bud[c]);
+  const spent=sum(S.expenses.filter(e=>e.date.startsWith(ym)&&bud[e.cat]),e=>e.amt), bp=tb?spent/tb*100:0;
+  let days;
+  if(hRange==='7d') days=[...Array(7)].map((_,i)=>daysAgo(6-i));
+  else if(hRange==='30d') days=[...Array(30)].map((_,i)=>daysAgo(29-i));
+  else { days=[]; for(let k=hFrom;k<=hTo;k=addDays(k,1)) days.push(k); }
+  const vals=days.map(net);
+  const sub=hRange==='7d'?'Your daily net profit for the last 7 days':hRange==='30d'?'Your daily net profit for the last 30 days':'Daily net profit, '+mdLab(hFrom)+' to '+mdLab(hTo);
+  const low=S.products.filter(p=>p.qty<=3);
+  const row=(icon,l,small,val,cls)=>`<div class="mr"><div class="ci sm">${ic(icon,18)}</div><div class="grow"><b class="l">${l}</b>${small?`<small>${small}</small>`:''}</div><b class="a ${cls||''}">${val}</b></div>`;
+  const chev=ic('chevr',13).replace('<svg','<svg class="chev"');
+  return `
+  <div class="hgrid">
+    <div class="sc hl" onclick="go('sell')"><div class="t"><div class="ci xs solid" style="background:color-mix(in srgb,var(--accent) 16%,#fff);color:var(--accent)">${ic('coins',17)}</div><span>Sales today</span>${chev}</div><b class="v">${fmt(sT)}</b>${trendPill(pctChg(sT,sY),'vs yesterday')}</div>
+    <div class="sc" onclick="go('money')"><div class="t"><div class="ci xs">${ic('wallet',17)}</div><span>Spent today</span>${chev}</div><b class="v">${fmt(eT)}</b>${trendPill(pctChg(eT,eY),'vs yesterday',true)}</div>
+    <div class="sc" onclick="go('analytics')"><div class="t"><div class="ci xs">${ic('calendar',17)}</div><span>Net this month</span>${chev}</div><b class="v ${netNow<0?'neg':''}">${fmt(netNow)}</b>${trendPill(pctChg(netNow,netPrev),'vs last month')}</div>
+  </div>
+
+  <div class="card">
+    <div class="ch"><div class="ci solid">${ic('bars',22)}</div><div class="grow"><div class="ct">This month <span class="pill">${MON[parseInt(sel.slice(5,7))-1]} ${sel.slice(0,4)}</span></div><small>${sel===ym?'Your business performance this month':'Your business performance in '+longMonth(sel)}</small></div>
+      <label class="msel"><span>${longMonth(sel)}</span>${ic('chevd',14)}<select onchange="setHMonth(this.value)">${monthList(12).slice().reverse().map(m=>`<option value="${m}" ${m===sel?'selected':''}>${longMonth(m)} ${m.slice(0,4)}</option>`).join('')}</select></label></div>
+    ${row('trend','Sales','',fmt(mSales))}
+    ${row('coins','Gross profit','',fmt(mGp),'pos')}
+    ${row('tag','Price reductions given','Items sold below listed price',fmt(mDisc),'neg')}
+    ${row('plusc','Other income','',fmt(mInc))}
+    ${row('wallet','Expenses','Net profit leaves out stock purchases (already in cost of goods)',fmt(mExp),'neg')}
+  </div>
+
+  <div class="bud"><div class="r1"><div class="ci w">${ic('wallet',22)}</div><div class="grow"><b class="bt">Budget used</b><small>${tb?fmt(spent)+' of '+fmt(tb)+' used':'No monthly budget set yet'}</small></div><button class="vd" onclick="moneyTab='bud';go('money')">${tb?'View Details':'Set budget'} ${ic('chevr',13)}</button></div>
+    ${tb?`<div class="r2"><div class="trk"><i class="${bp>100?'over':''}" style="width:${Math.min(100,bp)}%"></i></div><span class="pc">${Math.round(bp)}%</span></div>`:''}</div>
+
+  <div class="card">
+    <div class="ch nw"><div class="ci solid">${ic('trend',20)}</div><div class="grow"><div class="ct">Profit Trend (Daily)</div><small>${sub}</small></div>
+      <div class="tog">${[['7d','7D'],['30d','30D'],['custom','Custom']].map(r=>`<button class="${hRange===r[0]?'on':''}" onclick="setHRange('${r[0]}')">${r[1]}</button>`).join('')}</div></div>
+    ${hRange==='custom'?`<div class="dates"><input type="date" id="hf" value="${hFrom}" max="${t}" onchange="setHDates()"><input type="date" id="ht" value="${hTo}" max="${t}" onchange="setHDates()"></div>`:''}
+    ${profitBars(days,vals)}
+  </div>
+
+  <div class="dp"><div class="ci solid">${ic('moneybag',22)}</div><div class="grow"><b class="dt">Daily Profits</b><small>Total net profit made today</small></div>
+    <div style="text-align:right"><div class="big ${pT<0?'neg':''}">${fmt(pT)}</div>${trendPill(pctChg(pT,pY),'vs yesterday')}</div></div>
+
+  <div class="card">
+    <div class="ch"><div class="ci solid">${ic('swap',22)}</div><div class="grow"><div class="ct">Recent Transactions</div><small>Latest activity on your account</small></div><button class="seeall" onclick="allTx()">See All ${ic('chevr',13)}</button></div>
+    ${txRows(txList().slice(0,5))}
+  </div>
+
+  ${low.length?`<div class="card"><div class="ch"><div class="ci solid">${ic('box',22)}</div><div class="grow"><div class="ct">Low stock</div><small>Items running out</small></div></div>
+    ${low.map(p=>`<div class="tx"><div class="emo">${thumb(p)}</div><div class="grow"><b class="l">${esc(p.name)}</b><small>${p.qty} left</small></div><button class="btn sm ghost" onclick="restockSheet(${p.id})">Restock</button></div>`).join('')}</div>`:''}`;
+}
+
+/* ---------- SELL ---------- */
+let cartPrice={};
+const sp = id => { const p=S.products.find(p=>p.id==id); return cartPrice[id]!=null ? cartPrice[id] : eff(p); };
+function diffHTML(id){
+  const p=S.products.find(p=>p.id==id), v=sp(id), d=v-eff(p); let h='';
+  if(d<0) h+=`<span class="neg">${fmt(-d)} below listed price</span>`;
+  else if(d>0) h+=`<span class="pos">${fmt(d)} above listed price</span>`;
+  if(v>0 && v<p.cost) h+=` <span style="color:var(--amber)">· below your cost (${fmt(p.cost)})</span>`;
+  return h;
+}
+function sell(){
+  const items=Object.keys(cart).map(id=>({p:S.products.find(p=>p.id==id),q:cart[id]})).filter(x=>x.p);
+  const total=sum(items,x=>sp(x.p.id)*x.q);
+  return `
+  <div class="chips">${S.products.map(p=>`<div class="chip ${p.qty<=0?'out':''}" onclick="addCart(${p.id})">${thumb(p)} ${p.name}<small>${fmt(eff(p))} · ${p.qty} in stock</small></div>`).join('')}</div>
+  <div class="card"><h3>Cart <span style="font-weight:500;font-size:11.5px">You can change the sold price</span></h3>
+    ${items.length?items.map(x=>`<div class="row" style="align-items:flex-start"><div class="grow"><b>${x.p.name}</b><small style="display:block">Listed ${fmt(eff(x.p))}</small>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:11.5px;color:var(--mut)">Sold at</span><input class="pin" type="number" inputmode="numeric" value="${sp(x.p.id)}" oninput="setPrice(${x.p.id},this.value)"></div>
+      <small id="df${x.p.id}" style="display:block;margin-top:4px">${diffHTML(x.p.id)}</small></div>
+      <div class="qty"><button onclick="chg(${x.p.id},-1)">−</button><b>${x.q}</b><button onclick="chg(${x.p.id},1)">+</button></div></div>`).join(''):'<div class="empty">Cart is empty. Tap a product above.</div>'}
+    ${items.length?`<div class="row"><div class="grow"><b>Total</b></div><b id="cartTotal" style="font-size:17px">${fmt(total)}</b></div>`:''}
+  </div>
+  ${items.length?`<button class="btn" id="recBtn" onclick="recordSale()">Record sale · ${fmt(total)}</button>`:''}
+  <div class="card" style="margin-top:14px"><h3>Recent sales</h3>
+    ${[...S.sales].reverse().slice(0,6).map(s=>`<div class="row"><div class="grow"><b>${fmt(s.total)}</b><small>${s.date}</small>${(s.items||[]).map(i=>`<small style="display:block">${i.q}× ${i.n}${i.sold!=null&&i.sold!==i.listed?` @ ${fmt(i.sold)} <span class="${i.sold<i.listed?'neg':'pos'}">(listed ${fmt(i.listed)})</span>`:''}</small>`).join('')}</div><div style="text-align:right"><span class="tag">+${fmt(s.profit)}</span><br><button class="btn sm ghost" style="margin-top:6px" onclick="receiptForm(${s.id})">Receipt</button></div></div>`).join('')}
+  </div>`;
+}
+function setPrice(id,v){ const n=parseFloat(v); cartPrice[id]=isNaN(n)?0:n; const el=document.getElementById('df'+id); if(el) el.innerHTML=diffHTML(id); updTotal(); }
+function updTotal(){ const t=sum(Object.keys(cart),id=>sp(id)*cart[id]); const a=$('#cartTotal'), b=$('#recBtn'); if(a) a.textContent=fmt(t); if(b) b.textContent='Record sale · '+fmt(t); }
+function addCart(id){ const p=S.products.find(p=>p.id===id); if((cart[id]||0)>=p.qty){toast('Not enough stock');return;} cart[id]=(cart[id]||0)+1; render(); }
+function chg(id,d){ const p=S.products.find(p=>p.id===id); const n=(cart[id]||0)+d; if(n>p.qty){toast('Not enough stock');return;} if(n<=0){ delete cart[id]; delete cartPrice[id]; } else cart[id]=n; render(); }
+function recordSale(){
+  for(const id in cart){ if(!(sp(id)>0)){ toast('Enter a selling price'); return; } }
+  let total=0,profit=0,adj=0,items=[];
+  for(const id in cart){ const p=S.products.find(p=>p.id==id); const q=cart[id], v=sp(id), l=eff(p); p.qty-=q; total+=v*q; profit+=(v-p.cost)*q; adj+=(l-v)*q; items.push({n:p.name,q,listed:l,sold:v,cost:p.cost}); }
+  const sid=S.nextId++; S.sales.push({id:sid,date:today(),ts:Date.now(),total,profit,adj,items}); cart={}; cartPrice={};
+  render(); saleDoneSheet(sid);
+}
+
+/* ---------- STOCK ---------- */
+let stockCat='All';
+const catsList = () => ['All',...new Set(S.products.map(p=>p.category).filter(Boolean))];
+function setStockCat(i){ stockCat=catsList()[i]; render(); }
+const meta = p => [p.category, p.sizes&&p.sizes.length?'Sizes '+p.sizes.join(', '):''].filter(Boolean).join(' · ');
+function stock(){
+  const val=sum(S.products,p=>p.cost*p.qty);
+  const exp=sum(S.products,p=>eff(p)*p.qty);
+  const units=sum(S.products,p=>p.qty);
+  const cats=catsList(); if(!cats.includes(stockCat)) stockCat='All';
+  const list=S.products.filter(p=>stockCat==='All'||p.category===stockCat);
+  return `
+  <div class="snap"><small>Expected money if all stock sells</small>
+    <div class="big">${fmt(exp)}</div>
+    <div class="two"><div><small>Expected profit</small><b>${fmt(exp-val)}</b></div><div><small>Stock cost</small><b>${fmt(val)}</b></div></div>
+    <div class="two"><div><small>Items</small><b>${S.products.length}</b></div><div><small>Units in stock</small><b>${units}</b></div></div>
+  </div>
+  <button class="btn" onclick="productSheet()" style="margin-bottom:12px">+ Register new item</button>
+  <div class="opts" style="margin:0 0 12px">${cats.map((c,i)=>`<span class="opt ${c===stockCat?'on':''}" onclick="setStockCat(${i})">${c}</span>`).join('')}</div>
+  <div class="card">
+    ${list.map(p=>`<div class="row"><div class="emo">${thumb(p)}</div>
+      <div class="grow"><b>${p.name}</b><small style="display:block">${meta(p)}</small><small style="display:block">Cost ${fmt(p.cost)} · Price ${fmt(p.price)}</small>${p.desc?`<small class="clamp" style="display:block">${esc(p.desc)}</small>`:''}</div>
+      <div style="text-align:right"><span class="tag ${p.qty<=0?'red':p.qty<=3?'amb':''}">${p.qty} left</span><br><button class="btn sm ghost" style="margin-top:6px" onclick="restockSheet(${p.id})">+ Restock</button></div></div>`).join('')||'<div class="empty">No items in this category</div>'}
+  </div>`;
+}
+function restockSheet(id){
+  const p=S.products.find(p=>p.id===id);
+  openSheet(`<h2>Restock ${p.name}</h2><small style="color:var(--mut)">Currently ${p.qty} in stock</small>
+  <label>Quantity received</label><input id="rq" type="number" inputmode="numeric" placeholder="e.g. 10">
+  <label>New cost per item (optional)</label><input id="rc" type="number" inputmode="numeric" placeholder="${p.cost}">
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="rexp" style="width:auto" checked> Also record as stock-purchase expense</label>
+  <button class="btn" style="margin-top:14px" onclick="doRestock(${id})">Save</button>`);
+}
+function doRestock(id){
+  const p=S.products.find(p=>p.id===id); const q=parseInt($('#rq').value); if(!q||q<1){toast('Enter a quantity');return;}
+  const c=parseInt($('#rc').value); if(c) p.cost=c;
+  p.qty+=q;
+  if($('#rexp').checked) S.expenses.push({id:S.nextId++,date:today(),cat:'Stock purchase',amt:q*p.cost,note:'Restock: '+p.name});
+  closeSheet(); toast(p.published?'Stock updated on your online stall':'Stock updated'); render();
+}
+
+/* ---------- MONEY ---------- */
+function money(){
+  const mk=monthKey();
+  const mExp=S.expenses.filter(e=>e.date.startsWith(mk));
+  const byCat={}; mExp.forEach(e=>byCat[e.cat]=(byCat[e.cat]||0)+e.amt);
+  const body = moneyTab==='exp' ? `
+    <button class="btn" onclick="expSheet()" style="margin-bottom:12px">+ Add expense</button>
+    <div class="card">${[...S.expenses].reverse().slice(0,10).map(e=>`<div class="row"><div class="grow"><b>${e.cat}</b><small>${e.date}${e.note?' · '+e.note:''}</small></div><b class="neg">−${fmt(e.amt)}</b></div>`).join('')||'<div class="empty">No expenses yet</div>'}</div>`
+  : moneyTab==='inc' ? `
+    <button class="btn" onclick="incSheet()" style="margin-bottom:12px">+ Add other income</button>
+    <div class="card"><h3>Sales are added automatically</h3>${[...S.income].reverse().map(e=>`<div class="row"><div class="grow"><b>${e.src}</b><small>${e.date}</small></div><b class="pos">+${fmt(e.amt)}</b></div>`).join('')||'<div class="empty">No other income yet</div>'}</div>`
+  : `<div class="card"><h3>Monthly budgets <button class="btn sm ghost" onclick="budgetSheet()">Set budget</button></h3>
+    ${Object.keys(S.budgets).map(c=>{const spent=byCat[c]||0,lim=S.budgets[c],p=lim?spent/lim*100:0;return `<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:13px"><b>${c}</b><span>${fmt(spent)} / ${fmt(lim)}</span></div><div class="bar"><i class="${p>=100?'over':p>80?'warn':''}" style="width:${Math.min(100,p)}%"></i></div>${p>=100?'<small class="neg">Over budget</small>':p>80?'<small style="color:var(--amber)">Almost at limit</small>':''}</div>`}).join('')||'<div class="empty">No budgets set</div>'}</div>`;
+  return `<div class="seg"><button class="${moneyTab==='exp'?'on':''}" onclick="moneyTab='exp';render()">Expenses</button><button class="${moneyTab==='inc'?'on':''}" onclick="moneyTab='inc';render()">Income</button><button class="${moneyTab==='bud'?'on':''}" onclick="moneyTab='bud';render()">Budgets</button></div>${body}`;
+}
+function expSheet(){
+  openSheet(`<h2>Add expense</h2><label>Category</label><select id="ec">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+  <label>Amount (UGX)</label><input id="ea" type="number" inputmode="numeric"><label>Note (optional)</label><input id="en">
+  <button class="btn" style="margin-top:14px" onclick="saveExp()">Save expense</button>`);
+}
+function saveExp(){ const a=parseInt($('#ea').value); if(!a){toast('Enter an amount');return;} S.expenses.push({id:S.nextId++,date:today(),cat:$('#ec').value,amt:a,note:$('#en').value}); closeSheet(); toast('Expense saved'); render(); }
+function incSheet(){ openSheet(`<h2>Add other income</h2><label>Source</label><input id="is" placeholder="e.g. Tailoring job"><label>Amount (UGX)</label><input id="ia" type="number" inputmode="numeric"><button class="btn" style="margin-top:14px" onclick="saveInc()">Save income</button>`); }
+function saveInc(){ const a=parseInt($('#ia').value); if(!a){toast('Enter an amount');return;} S.income.push({id:S.nextId++,date:today(),src:$('#is').value||'Other',amt:a}); closeSheet(); toast('Income saved'); render(); }
+function budgetSheet(){ openSheet(`<h2>Set monthly budget</h2><label>Category</label><select id="bc">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select><label>Limit (UGX)</label><input id="bl" type="number" inputmode="numeric"><button class="btn" style="margin-top:14px" onclick="saveBud()">Save budget</button>`); }
+function saveBud(){ const a=parseInt($('#bl').value); if(!a){toast('Enter a limit');return;} S.budgets[$('#bc').value]=a; closeSheet(); toast('Budget saved'); render(); }
+
+/* ---------- STALL ---------- */
+const COLORS=['#0F8A4D','#0F766E','#1D4ED8','#B45309','#9D174D','#4C1D95','#10241F'];
+function stall(){
+  const pub=S.products.filter(p=>p.published);
+  return `
+  <div class="stallhero" style="background:${S.stall.color}"><div style="display:flex;gap:12px;align-items:center"><div class="av" style="width:52px;height:52px;cursor:default;font-size:17px">${avInner()}</div><div><h2>${esc(S.stall.name)}</h2><p>${esc(S.stall.tagline||'')}</p></div></div>${S.profile?`<p style="margin-top:8px">${esc(S.profile.category)}${S.profile.location?' · '+esc(S.profile.location):''}</p>`:''}<p style="margin-top:8px">${ic('link',13)} quonnect market · ${pub.length} product${pub.length!==1?'s':''} live</p></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" onclick="productSheet(true)">+ Add product</button><button class="btn ghost" onclick="customSheet()">Customise</button></div>
+  <div class="card"><h3>Manage listings</h3>
+    ${S.products.map(p=>`<div class="row"><div class="emo">${thumb(p)}</div>
+      <div class="grow"><b>${p.name}</b><small>${p.qty} in stock${p.colors.length?' · '+p.colors.join(', '):''}${p.discount?' · '+p.discount+'% off':''}${p.sizes&&p.sizes.length?' · Sizes '+p.sizes.join(', '):''}</small></div>
+      <button class="btn sm ghost" onclick="discSheet(${p.id})">Deal</button>
+      <div class="toggle ${p.published?'on':''}" onclick="togglePub(${p.id})"></div></div>`).join('')}
+  </div>
+  <div class="card"><h3>What customers see</h3>
+    <div class="pgrid">${pub.map(p=>`<div class="pcard"><div class="emo">${thumb(p)}</div><b>${p.name}</b>${p.discount?`<span class="tag red">-${p.discount}%</span><br><s>${fmt(p.price)}</s><br>`:''}<b style="color:${S.stall.color}">${fmt(eff(p))}</b><div style="font-size:10.5px;color:var(--mut);margin-top:3px">${p.qty>0?([p.colors.join(' · '),(p.sizes||[]).join(' ')].filter(Boolean).join(' | ')||'In stock'):'Sold out'}</div>${p.desc?`<div class="clamp" style="font-size:10.5px;color:var(--mut);margin-top:3px">${esc(p.desc)}</div>`:''}</div>`).join('')||'<div class="empty" style="grid-column:1/3">No products published</div>'}</div>
+  </div>`;
+}
+function togglePub(id){ const p=S.products.find(p=>p.id===id); p.published=!p.published; toast(p.published?'Now live on your stall':'Hidden from your stall'); render(); }
+function discSheet(id){ const p=S.products.find(p=>p.id===id);
+  openSheet(`<h2>Discount · ${p.name}</h2><label>Discount %</label><input id="dp" type="number" inputmode="numeric" value="${p.discount||0}" min="0" max="90"><button class="btn" style="margin-top:14px" onclick="saveDisc(${id})">Apply</button>`); }
+function saveDisc(id){ const p=S.products.find(p=>p.id===id); p.discount=Math.max(0,Math.min(90,parseInt($('#dp').value)||0)); closeSheet(); toast('Discount live on stall'); render(); }
+function customSheet(){
+  openSheet(`<h2>Customise your stall</h2><label>Stall name</label><input id="sn" value="${S.stall.name}"><label>Tagline</label><input id="st" value="${S.stall.tagline}">
+  <label>Stall colour</label><div id="sws">${COLORS.map(c=>`<span class="sw ${c===S.stall.color?'on':''}" style="background:${c}" data-c="${c}"></span>`).join('')}</div>
+  <button class="btn" style="margin-top:14px" onclick="saveCustom()">Save and publish</button>`);
+  document.querySelectorAll('#sws .sw').forEach(el=>el.onclick=()=>{ document.querySelectorAll('#sws .sw').forEach(x=>x.classList.remove('on')); el.classList.add('on'); });
+}
+function saveCustom(){ const on=document.querySelector('#sws .sw.on'); S.stall.name=$('#sn').value||S.stall.name; S.stall.tagline=$('#st').value; if(S.profile){ S.profile.businessName=S.stall.name; S.profile.motto=S.stall.tagline; } if(on) S.stall.color=on.dataset.c; closeSheet(); toast('Stall updated'); render(); }
+
+/* shared: new product */
+let pendingImg=null;
+function pickImg(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=e=>{ const im=new Image(); im.onload=()=>{ const k=Math.min(1,420/Math.max(im.width,im.height)); const c=document.createElement('canvas'); c.width=im.width*k; c.height=im.height*k; c.getContext('2d').drawImage(im,0,0,c.width,c.height); pendingImg=c.toDataURL('image/jpeg',.72); $('#upl').innerHTML='<img src="'+pendingImg+'" alt="">'; }; im.src=e.target.result; };
+  r.readAsDataURL(f);
+}
+const CATS=['Shoes','Bags','Dresses','Shirts','Trousers & jeans','Skirts','Accessories','Other'];
+const CLOTH=['XS','S','M','L','XL','XXL','XXXL'];
+const SIZESETS={'Shoes':['36','37','38','39','40','41','42','43','44','45'],'Bags':['Small','Medium','Large'],'Trousers & jeans':['28','30','32','34','36','38','40','S','M','L','XL','XXL'],'Accessories':['One size'],'Other':['One size']};
+const CAT_ICON={'Shoes':'shoe','Bags':'bag','Dresses':'shirt','Shirts':'shirt','Skirts':'shirt','Trousers & jeans':'jeans'};
+let pickedSizes=[];
+function drawSizes(){
+  const set=SIZESETS[$('#pcat').value]||CLOTH;
+  pickedSizes=pickedSizes.filter(x=>set.includes(x));
+  $('#sizes').innerHTML=set.map((x,i)=>`<span class="opt ${pickedSizes.includes(x)?'on':''}" onclick="togSize(${i})">${x}</span>`).join('');
+}
+function togSize(i){
+  const set=SIZESETS[$('#pcat').value]||CLOTH, x=set[i], k=pickedSizes.indexOf(x);
+  if(k>=0) pickedSizes.splice(k,1); else pickedSizes.push(x);
+  drawSizes();
+}
+function productSheet(publish){
+  pendingImg=null; pickedSizes=[];
+  openSheet(`<h2>${publish?'Add product to stall':'Register new item'}</h2>
+  <label>Item name</label><input id="pn" placeholder="e.g. Ankara Shirt">
+  <label>Product photo</label><label class="upl" id="upl" for="pimg">${ic('camera',28)}Tap to add a photo</label><input type="file" id="pimg" accept="image/*" style="display:none" onchange="pickImg(this)">
+  <label>Category</label><select id="pcat" onchange="drawSizes()">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+  <label>Sizes available (tap to select)</label><div class="opts" id="sizes"></div>
+  <input id="psz" placeholder="Other sizes, comma separated (optional)" style="margin-top:8px">
+  <label>Colours (comma separated)</label><input id="pcol" placeholder="Red, Blue, Black">
+  <label>Description</label><textarea id="pdesc" placeholder="Material, fit, care, anything customers should know"></textarea>
+  <label>Cost price (UGX)</label><input id="pc" type="number" inputmode="numeric">
+  <label>Selling price (UGX)</label><input id="pp" type="number" inputmode="numeric">
+  <label>Quantity</label><input id="pq" type="number" inputmode="numeric">
+  <label>Discount % (optional)</label><input id="pd" type="number" inputmode="numeric" value="0">
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ppub" style="width:auto" ${publish?'checked':''}> Show on my online stall</label>
+  <button class="btn" style="margin-top:14px" onclick="saveProduct()">Save item</button>`);
+  drawSizes();
+}
+function saveProduct(){
+  const n=$('#pn').value.trim(), pp=parseInt($('#pp').value), q=parseInt($('#pq').value);
+  if(!n||!pp||isNaN(q)){toast('Name, price and quantity needed');return;}
+  const cat=$('#pcat').value;
+  const extra=$('#psz').value.split(',').map(x=>x.trim()).filter(Boolean);
+  const sizes=[...new Set([...pickedSizes,...extra])];
+  const pub=$('#ppub').checked;
+  S.products.push({id:S.nextId++,name:n,img:pendingImg,icon:CAT_ICON[cat]||'box',category:cat,sizes,desc:$('#pdesc').value.trim(),cost:parseInt($('#pc').value)||0,price:pp,qty:q,colors:$('#pcol').value.split(',').map(x=>x.trim()).filter(Boolean),discount:Math.min(90,parseInt($('#pd').value)||0),published:pub});
+  closeSheet(); toast(pub?'Added and live on your stall':'Item registered'); render();
+}
+render();
+</script>
+</body>
+</html>
