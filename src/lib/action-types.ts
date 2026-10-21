@@ -50,11 +50,18 @@ export interface ExpenseInput {
   category: string;
   amount: number;
   note: string;
+  frequency: "daily" | "monthly";
+  entry_date: string;
+}
+
+export interface ExpenseUpdateInput extends ExpenseInput {
+  id: string;
 }
 
 export interface IncomeInput {
-  source: string;
+  category: string;
   amount: number;
+  note: string;
 }
 
 export interface BudgetInput {

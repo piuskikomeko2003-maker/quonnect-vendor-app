@@ -1,7 +1,14 @@
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AppDatabase, Stall, Vendor } from "@/types/app-db";
 
 type Client = SupabaseClient<AppDatabase>;
+
+/** The subset of a signed-in user needed to repair a profile. */
+export interface ProfileUser {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}
 
 interface SignupMetadata {
   owner_name?: string;
@@ -17,7 +24,7 @@ interface SignupMetadata {
   logo_url?: string;
 }
 
-function metadataOf(user: User): SignupMetadata {
+function metadataOf(user: ProfileUser): SignupMetadata {
   return (user.user_metadata ?? {}) as SignupMetadata;
 }
 
@@ -28,7 +35,7 @@ function metadataOf(user: User): SignupMetadata {
  */
 export async function ensureVendorProfile(
   supabase: Client,
-  user: User,
+  user: ProfileUser,
 ): Promise<{ vendor: Vendor | null; stall: Stall | null; error?: string }> {
   const meta = metadataOf(user);
 

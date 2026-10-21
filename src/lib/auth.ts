@@ -23,12 +23,30 @@ const FALLBACK_STALL = (vendor: Vendor): Stall => ({
 
 export const getVendorContext = cache(async (): Promise<VendorContext | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  if (!claims?.sub) return null;
 
-  const { data: vendor, error } = await supabase
+  const user = {
+    id: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : undefined,
+  };
+  const profileUser = { ...user, user_metadata: claims.user_metadata };
+
+  // One round trip: read the stall and its vendor together. This runs on every
+  // page render, so avoiding a second sequential query matters for tab speed.
+  const { data: joined } = await supabase
+    .from("stalls")
+    .select<string, Stall & { vendors: Vendor }>("*, vendors!inner(*)")
+    .eq("vendors.user_id", user.id)
+    .maybeSingle();
+
+  if (joined) {
+    const { vendors, ...stall } = joined;
+    return { supabase, user, vendor: vendors, stall: stall as Stall };
+  }
+
+  const { data: vendor } = await supabase
     .from("vendors")
     .select("*")
     .eq("user_id", user.id)
@@ -37,8 +55,8 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
   let activeVendor = vendor;
   let activeStall: Stall | null = null;
 
-  if (!activeVendor || error) {
-    const repaired = await ensureVendorProfile(supabase, user);
+  if (!activeVendor) {
+    const repaired = await ensureVendorProfile(supabase, profileUser);
     activeVendor = repaired.vendor;
     activeStall = repaired.stall;
   }
@@ -46,22 +64,13 @@ export const getVendorContext = cache(async (): Promise<VendorContext | null> =>
   if (!activeVendor) return null;
 
   if (!activeStall) {
-    const { data: stall } = await supabase
-      .from("stalls")
-      .select("*")
-      .eq("vendor_id", activeVendor.id)
-      .maybeSingle();
-    activeStall = stall;
-
-    if (!activeStall) {
-      const repaired = await ensureVendorProfile(supabase, user);
-      activeStall = repaired.stall;
-    }
+    const repaired = await ensureVendorProfile(supabase, profileUser);
+    activeStall = repaired.stall;
   }
 
   return {
     supabase,
-    user: { id: user.id, email: user.email },
+    user,
     vendor: activeVendor,
     stall: activeStall ?? FALLBACK_STALL(activeVendor),
   };

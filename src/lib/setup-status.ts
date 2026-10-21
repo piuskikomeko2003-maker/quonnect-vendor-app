@@ -25,6 +25,14 @@ export async function getSetupStatus(): Promise<SetupStatus | null> {
     { label: "sale_items price snapshots", run: () => supabase.from("sale_items").select("listed_price,sold_price").limit(1) },
     { label: "stock_movements table", run: () => supabase.from("stock_movements").select("id,delta,reason").limit(1) },
     { label: "budgets table", run: () => supabase.from("budgets").select("id,category,monthly_limit").limit(1) },
+    {
+      label: "expense frequency column (daily/monthly)",
+      run: () => supabase.from("finance_entries").select("id,frequency").limit(1),
+    },
+    {
+      label: "finance_categories table",
+      run: () => supabase.from("finance_categories").select("id,type,name").limit(1),
+    },
   ];
 
   const missing: string[] = [];

@@ -211,7 +211,14 @@ export const previewSell: SellData = {
   ],
 };
 
-const expense = (id: string, category: string, amount: number, note: string, day: string): FinanceEntry => ({
+const expense = (
+  id: string,
+  category: string,
+  amount: number,
+  note: string,
+  day: string,
+  frequency: "daily" | "monthly" = "daily",
+): FinanceEntry => ({
   id,
   vendor_id: previewVendor.id,
   type: "expense",
@@ -220,6 +227,7 @@ const expense = (id: string, category: string, amount: number, note: string, day
   source: "manual",
   entry_date: day,
   notes: note,
+  frequency,
   created_at: new Date().toISOString(),
 });
 
@@ -233,7 +241,7 @@ const budget = (category: string, limit: number): Budget => ({
 
 export const previewMoney: MoneyData = {
   expenses: [
-    expense("e1", "Stall fee", 92000, "Market day fee", today),
+    expense("e1", "Stall fee", 92000, "Market day fee", today, "monthly"),
     expense("e2", "Transport", 15000, "", addDays(today, -1)),
     expense("e3", "Packaging", 12000, "Bags", addDays(today, -2)),
     expense("e4", "Airtime/Data", 5000, "", addDays(today, -3)),
@@ -255,6 +263,19 @@ export const previewMoney: MoneyData = {
     "Stall fee": 92000,
     Packaging: 26000,
     "Airtime/Data": 18000,
+  },
+  categories: {
+    expense: [
+      "Stock purchase",
+      "Transport",
+      "Stall fee",
+      "Packaging",
+      "Airtime/Data",
+      "Food",
+      "Other",
+      "Salon supplies",
+    ],
+    income: ["Tailoring", "Repairs", "Delivery", "Commission", "Gift", "Other"],
   },
 };
 

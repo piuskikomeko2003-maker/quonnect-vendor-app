@@ -29,6 +29,7 @@ const ICONS: Record<IconKey, React.ReactNode> = {
       <path d="M12 8v8M8 12h8" />
     </>
   ),
+  plus: <path d="M12 5v14M5 12h14" strokeWidth="2.4" />,
   moneybag: (
     <>
       <path d="M9 3h6l-1.5 3h-3z" />

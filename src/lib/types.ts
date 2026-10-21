@@ -102,6 +102,7 @@ export interface MoneyData {
   income: import("@/types/app-db").FinanceEntry[];
   budgets: Budget[];
   spentByCategory: Record<string, number>;
+  categories: { expense: string[]; income: string[] };
 }
 
 export interface GroupedSeries {

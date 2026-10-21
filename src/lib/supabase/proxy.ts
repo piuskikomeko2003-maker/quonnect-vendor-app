@@ -25,8 +25,12 @@ export async function updateSession(request: NextRequest) {
   );
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: claimsData,
+  } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  const user = claims?.sub
+    ? { id: claims.sub, email: typeof claims.email === "string" ? claims.email : undefined }
+    : null;
 
   return { response, user };
 }

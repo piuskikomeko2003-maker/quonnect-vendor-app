@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { recordSaleAction, saveReceiptAction } from "@/actions/business";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Icon } from "@/components/ui/Icon";
+import { Thumb } from "@/components/ui/Thumb";
 import { useToast } from "@/components/ui/Toast";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { formatDay, formatUGX, todayKey } from "@/lib/format";
@@ -62,6 +63,8 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
   const [receiptForm, setReceiptForm] = useState<ReceiptSale | null>(null);
   const [preview, setPreview] = useState<{ sale: ReceiptSale; canvas: HTMLCanvasElement; url: string } | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   const lines = Object.entries(cart)
     .map(([id, entry]) => {
@@ -71,6 +74,14 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
     .filter(Boolean) as { product: Product; qty: number; soldPrice: string }[];
 
   const total = lines.reduce((sum, line) => sum + (Number(line.soldPrice) || 0) * line.qty, 0);
+  const itemCount = lines.reduce((sum, line) => sum + line.qty, 0);
+  const search = query.trim().toLowerCase();
+  const pickable = products.filter(
+    (product) =>
+      !search ||
+      product.name.toLowerCase().includes(search) ||
+      (product.category ?? "").toLowerCase().includes(search),
+  );
 
   function addToCart(product: Product) {
     if (product.stock <= 0) {
@@ -153,6 +164,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
       })),
     };
     setCart({});
+    setAddOpen(false);
     setDone(sale);
     router.refresh();
   }
@@ -326,6 +338,83 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
           <div className="empty">No sales yet</div>
         )}
       </div>
+
+      <div style={{ height: 54 }} aria-hidden />
+
+      <button
+        type="button"
+        className="fab"
+        aria-label="Add a sale"
+        onClick={() => {
+          setQuery("");
+          setAddOpen(true);
+        }}
+      >
+        <Icon name="plus" size={26} />
+      </button>
+
+      <BottomSheet
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Add a sale"
+        subtitle="Tap an item to add it to this sale"
+      >
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search items"
+          aria-label="Search items"
+          style={{ marginTop: 10 }}
+        />
+        <div style={{ maxHeight: "46vh", overflowY: "auto" }}>
+          {pickable.length ? (
+            pickable.map((product) => {
+              const inCart = cart[product.id]?.qty ?? 0;
+              const out = product.stock <= 0;
+              return (
+                <div className="row" key={product.id}>
+                  <Thumb product={product} />
+                  <div className="grow">
+                    <b>{product.name}</b>
+                    <small style={{ display: "block" }}>
+                      {formatUGX(effectivePrice(product))} · {product.stock} in stock
+                      {inCart ? ` · ${inCart} in this sale` : ""}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    disabled={out}
+                    onClick={() => addToCart(product)}
+                    aria-label={`Add ${product.name} to the sale`}
+                  >
+                    {out ? "Out" : "+ Add"}
+                  </button>
+                </div>
+              );
+            })
+          ) : (
+            <div className="empty">No items match “{query}”</div>
+          )}
+        </div>
+        <div className="row" style={{ borderBottom: 0 }}>
+          <div className="grow">
+            <small>In this sale</small>
+            <b>
+              {itemCount} {itemCount === 1 ? "item" : "items"}
+            </b>
+          </div>
+          <b style={{ fontSize: 17 }}>{formatUGX(total)}</b>
+        </div>
+        <button className="btn" disabled={!lines.length || busy} onClick={recordSale}>
+          {busy
+            ? "Recording…"
+            : lines.length
+              ? `Record sale · ${formatUGX(total)}`
+              : "Add an item to start"}
+        </button>
+      </BottomSheet>
 
       <BottomSheet open={Boolean(done)} onClose={() => setDone(null)}>
         {done ? (

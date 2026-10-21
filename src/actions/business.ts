@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { requireVendor } from "@/lib/auth";
 import { effectivePrice } from "@/lib/product";
-import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_METHODS } from "@/lib/constants";
 import { todayKey } from "@/lib/format";
 import type {
   BudgetInput,
   CartLineInput,
   ExpenseInput,
+  ExpenseUpdateInput,
   IncomeInput,
   ProductInput,
   ReceiptInput,
@@ -21,6 +22,33 @@ function refreshBusinessPaths() {
   ["/home", "/sell", "/stock", "/money", "/analytics", "/stall", "/profile"].forEach((path) => {
     revalidatePath(path);
   });
+}
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanCategory(value: string) {
+  return value.replace(/\s+/g, " ").trim().slice(0, 40);
+}
+
+function cleanEntryDate(value: string) {
+  return DATE_KEY.test(value) && value <= todayKey() ? value : todayKey();
+}
+
+/** Defaults live in code; anything else is stored per vendor. */
+async function rememberCategory(
+  supabase: Awaited<ReturnType<typeof requireVendor>>["supabase"],
+  vendorId: string,
+  type: "expense" | "income",
+  name: string,
+): Promise<SimpleResult> {
+  const defaults: readonly string[] = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  if (defaults.some((item) => item.toLowerCase() === name.toLowerCase())) return { ok: true };
+
+  const { error } = await supabase
+    .from("finance_categories")
+    .insert({ vendor_id: vendorId, type, name });
+  if (error && error.code !== "23505") return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export async function createProductAction(input: ProductInput): Promise<SimpleResult> {
@@ -192,15 +220,72 @@ export async function saveReceiptAction(input: ReceiptInput): Promise<SimpleResu
 export async function addExpenseAction(input: ExpenseInput): Promise<SimpleResult> {
   const { supabase, vendor } = await requireVendor();
   const amount = Math.round(Number(input.amount));
-  const category = EXPENSE_CATEGORIES.includes(input.category as (typeof EXPENSE_CATEGORIES)[number])
-    ? input.category
-    : "Other";
-
+  const category = cleanCategory(input.category);
+  if (!category) return { ok: false, error: "Choose a category" };
   if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Enter an amount" };
+
+  const remembered = await rememberCategory(supabase, vendor.id, "expense", category);
+  if (!remembered.ok) return remembered;
 
   const { error } = await supabase.from("finance_entries").insert({
     vendor_id: vendor.id,
     type: "expense",
+    category,
+    amount,
+    source: "manual",
+    entry_date: cleanEntryDate(input.entry_date),
+    notes: input.note.trim() || null,
+    frequency: input.frequency === "monthly" ? "monthly" : "daily",
+  });
+  if (error) return { ok: false, error: error.message };
+  refreshBusinessPaths();
+  return { ok: true };
+}
+
+export async function updateExpenseAction(input: ExpenseUpdateInput): Promise<SimpleResult> {
+  const { supabase, vendor } = await requireVendor();
+  const amount = Math.round(Number(input.amount));
+  const category = cleanCategory(input.category);
+  if (!input.id) return { ok: false, error: "Expense not found" };
+  if (!category) return { ok: false, error: "Choose a category" };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Enter an amount" };
+
+  const remembered = await rememberCategory(supabase, vendor.id, "expense", category);
+  if (!remembered.ok) return remembered;
+
+  const { data, error } = await supabase
+    .from("finance_entries")
+    .update({
+      category,
+      amount,
+      entry_date: cleanEntryDate(input.entry_date),
+      notes: input.note.trim() || null,
+      frequency: input.frequency === "monthly" ? "monthly" : "daily",
+    })
+    .eq("id", input.id)
+    .eq("vendor_id", vendor.id)
+    .eq("type", "expense")
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Expense not found" };
+  refreshBusinessPaths();
+  return { ok: true };
+}
+
+export async function addIncomeAction(input: IncomeInput): Promise<SimpleResult> {
+  const { supabase, vendor } = await requireVendor();
+  const amount = Math.round(Number(input.amount));
+  const category = cleanCategory(input.category);
+  if (!category) return { ok: false, error: "Choose a category" };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Enter an amount" };
+
+  const remembered = await rememberCategory(supabase, vendor.id, "income", category);
+  if (!remembered.ok) return remembered;
+
+  const { error } = await supabase.from("finance_entries").insert({
+    vendor_id: vendor.id,
+    type: "income",
     category,
     amount,
     source: "manual",
@@ -212,36 +297,20 @@ export async function addExpenseAction(input: ExpenseInput): Promise<SimpleResul
   return { ok: true };
 }
 
-export async function addIncomeAction(input: IncomeInput): Promise<SimpleResult> {
-  const { supabase, vendor } = await requireVendor();
-  const amount = Math.round(Number(input.amount));
-  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Enter an amount" };
-
-  const { error } = await supabase.from("finance_entries").insert({
-    vendor_id: vendor.id,
-    type: "income",
-    category: input.source.trim() || "Other",
-    amount,
-    source: "manual",
-    entry_date: todayKey(),
-  });
-  if (error) return { ok: false, error: error.message };
-  refreshBusinessPaths();
-  return { ok: true };
-}
-
 export async function setBudgetAction(input: BudgetInput): Promise<SimpleResult> {
   const { supabase, vendor } = await requireVendor();
   const limit = Math.round(Number(input.monthly_limit));
+  const category = cleanCategory(input.category);
   if (!Number.isFinite(limit) || limit <= 0) return { ok: false, error: "Enter a limit" };
-  if (!EXPENSE_CATEGORIES.includes(input.category as (typeof EXPENSE_CATEGORIES)[number])) {
-    return { ok: false, error: "Choose an expense category" };
-  }
+  if (!category) return { ok: false, error: "Choose an expense category" };
+
+  const remembered = await rememberCategory(supabase, vendor.id, "expense", category);
+  if (!remembered.ok) return remembered;
 
   const { error } = await supabase.from("budgets").upsert(
     {
       vendor_id: vendor.id,
-      category: input.category,
+      category,
       monthly_limit: limit,
     },
     { onConflict: "vendor_id,category" },

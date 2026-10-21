@@ -202,6 +202,7 @@ export type Database = {
           source: string;
           entry_date: string;
           notes: string | null;
+          frequency: "daily" | "monthly";
           created_at: string;
         };
         Insert: {
@@ -213,9 +214,28 @@ export type Database = {
           source?: string;
           entry_date?: string;
           notes?: string | null;
+          frequency?: "daily" | "monthly";
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["finance_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_categories: {
+        Row: {
+          id: string;
+          vendor_id: string;
+          type: "income" | "expense";
+          name: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vendor_id: string;
+          type: "income" | "expense";
+          name: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_categories"]["Insert"]>;
         Relationships: [];
       };
       budgets: {

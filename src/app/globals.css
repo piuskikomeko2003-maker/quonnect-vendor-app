@@ -250,6 +250,62 @@ a {
   font-weight: 700;
 }
 
+/* ---------- floating action button ---------- */
+.fab {
+  position: fixed;
+  left: 50%;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 45%, transparent);
+  z-index: 35;
+}
+
+.fab:active {
+  transform: translateX(-50%) scale(0.94);
+}
+
+@media (min-width: 460px) {
+  .fab {
+    bottom: calc(4vh + 68px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------- loading skeleton ---------- */
+.sk {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 8%, #fff) 25%,
+    color-mix(in srgb, var(--accent) 15%, #fff) 37%,
+    color-mix(in srgb, var(--accent) 8%, #fff) 63%
+  );
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes sk-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+  }
+}
+
 /* ---------- primitives ---------- */
 .card {
   background: var(--card);

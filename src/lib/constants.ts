@@ -8,6 +8,19 @@ export const EXPENSE_CATEGORIES = [
   "Other",
 ] as const;
 
+export const INCOME_CATEGORIES = [
+  "Tailoring",
+  "Repairs",
+  "Delivery",
+  "Commission",
+  "Gift",
+  "Other",
+] as const;
+
+export const EXPENSE_FREQUENCIES = ["daily", "monthly"] as const;
+
+export type ExpenseFrequency = (typeof EXPENSE_FREQUENCIES)[number];
+
 export const BUSINESS_CATEGORIES = [
   "Fashion & clothing",
   "Cosmetics & beauty",
@@ -66,6 +79,7 @@ export const STALL_COLORS = [
   "#0F8A4D",
   "#0F766E",
   "#1D4ED8",
+  "#0EA5E9",
   "#B45309",
   "#9D174D",
   "#4C1D95",
@@ -114,6 +128,7 @@ export type IconKey =
   | "bars"
   | "trend"
   | "plusc"
+  | "plus"
   | "moneybag"
   | "swap"
   | "cart"

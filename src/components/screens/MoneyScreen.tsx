@@ -2,23 +2,111 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { addExpenseAction, addIncomeAction, setBudgetAction } from "@/actions/business";
+import {
+  addExpenseAction,
+  addIncomeAction,
+  setBudgetAction,
+  updateExpenseAction,
+} from "@/actions/business";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { useToast } from "@/components/ui/Toast";
-import { EXPENSE_CATEGORIES } from "@/lib/constants";
-import { formatUGX } from "@/lib/format";
+import { EXPENSE_FREQUENCIES, type ExpenseFrequency } from "@/lib/constants";
+import { formatDay, formatUGX, todayKey } from "@/lib/format";
 import type { MoneyData } from "@/lib/types";
+import type { Budget, FinanceEntry } from "@/types/app-db";
 
 type MoneyTab = "exp" | "inc" | "bud";
+
+interface ExpenseValues {
+  category: string;
+  amount: number;
+  note: string;
+  frequency: ExpenseFrequency;
+  entry_date: string;
+}
+
+interface CategoryFieldProps {
+  id: string;
+  label: string;
+  categories: string[];
+  value: string;
+  adding: boolean;
+  custom: string;
+  onValue: (value: string) => void;
+  onAdding: (adding: boolean) => void;
+  onCustom: (value: string) => void;
+}
+
+function CategoryField({
+  id,
+  label,
+  categories,
+  value,
+  adding,
+  custom,
+  onValue,
+  onAdding,
+  onCustom,
+}: CategoryFieldProps) {
+  return (
+    <>
+      <label htmlFor={id}>{label}</label>
+      <select id={id} value={value} disabled={adding} onChange={(event) => onValue(event.target.value)}>
+        {categories.map((item) => (
+          <option key={item}>{item}</option>
+        ))}
+      </select>
+      {adding ? (
+        <input
+          value={custom}
+          onChange={(event) => onCustom(event.target.value)}
+          placeholder="Name your category"
+        />
+      ) : null}
+      <button
+        type="button"
+        className="link"
+        style={{ fontSize: 12, marginTop: 6, alignSelf: "flex-start" }}
+        onClick={() => onAdding(!adding)}
+      >
+        {adding ? "Choose an existing category" : "+ Add new category"}
+      </button>
+    </>
+  );
+}
 
 export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; initialTab?: MoneyTab }) {
   const router = useRouter();
   const toast = useToast();
   const [tab, setTab] = useState<MoneyTab>(initialTab);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<FinanceEntry | null>(null);
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function openExpense(entry: FinanceEntry | null = null) {
+    setEditingExpense(entry);
+    setExpenseOpen(true);
+  }
+
+  function openBudget(budget: Budget | null = null) {
+    setEditingBudget(budget);
+    setBudgetOpen(true);
+  }
+
+  async function submitExpense(values: ExpenseValues) {
+    setBusy(true);
+    const result = editingExpense
+      ? await updateExpenseAction({ id: editingExpense.id, ...values })
+      : await addExpenseAction(values);
+    setBusy(false);
+    if (!result.ok) return toast(result.error ?? "Could not save expense");
+    setExpenseOpen(false);
+    toast(editingExpense ? "Expense updated" : "Expense saved");
+    router.refresh();
+  }
 
   return (
     <>
@@ -45,23 +133,39 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
 
       {tab === "exp" ? (
         <>
-          <button className="btn" style={{ marginBottom: 12 }} onClick={() => setExpenseOpen(true)}>
+          <button className="btn" style={{ marginBottom: 12 }} onClick={() => openExpense()}>
             + Add expense
           </button>
           <div className="card">
             {data.expenses.length ? (
-              data.expenses.map((expense) => (
-                <div className="row" key={expense.id}>
-                  <div className="grow">
-                    <b>{expense.category}</b>
-                    <small>
-                      {expense.entry_date}
-                      {expense.notes ? ` · ${expense.notes}` : ""}
-                    </small>
+              data.expenses.map((expense) => {
+                const monthly = (expense.frequency ?? "daily") === "monthly";
+                return (
+                  <div className="row" key={expense.id}>
+                    <div className="grow">
+                      <b>
+                        {expense.category}{" "}
+                        <span className={`tag ${monthly ? "amb" : ""}`}>{monthly ? "Monthly" : "Daily"}</span>
+                      </b>
+                      <small style={{ display: "block" }}>
+                        {formatDay(expense.entry_date)}
+                        {expense.notes ? ` · ${expense.notes}` : ""}
+                      </small>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <b className="neg">−{formatUGX(expense.amount)}</b>
+                      <button
+                        type="button"
+                        className="link"
+                        style={{ display: "block", marginLeft: "auto", fontSize: 11.5 }}
+                        onClick={() => openExpense(expense)}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
-                  <b className="neg">−{formatUGX(expense.amount)}</b>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="empty">No expenses yet</div>
             )}
@@ -81,7 +185,10 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
                 <div className="row" key={entry.id}>
                   <div className="grow">
                     <b>{entry.category}</b>
-                    <small>{entry.entry_date}</small>
+                    <small>
+                      {formatDay(entry.entry_date)}
+                      {entry.notes ? ` · ${entry.notes}` : ""}
+                    </small>
                   </div>
                   <b className="pos">+{formatUGX(entry.amount)}</b>
                 </div>
@@ -97,7 +204,7 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
         <div className="card">
           <h3>
             Monthly budgets{" "}
-            <button type="button" className="btn sm ghost" onClick={() => setBudgetOpen(true)}>
+            <button type="button" className="btn sm ghost" onClick={() => openBudget()}>
               Set budget
             </button>
           </h3>
@@ -111,7 +218,15 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 8 }}>
                     <b>{budget.category}</b>
                     <span>
-                      {formatUGX(spent)} / {formatUGX(limit)}
+                      {formatUGX(spent)} / {formatUGX(limit)}{" "}
+                      <button
+                        type="button"
+                        className="link"
+                        style={{ fontSize: 11.5 }}
+                        onClick={() => openBudget(budget)}
+                      >
+                        Edit
+                      </button>
                     </span>
                   </div>
                   <div className="bar">
@@ -135,27 +250,24 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
       ) : null}
 
       <ExpenseSheet
+        key={editingExpense?.id ?? (expenseOpen ? "new" : "closed")}
         open={expenseOpen}
+        entry={editingExpense}
+        categories={data.categories.expense}
         busy={busy}
         onClose={() => setExpenseOpen(false)}
-        onSubmit={async (category, amount, note) => {
-          setBusy(true);
-          const result = await addExpenseAction({ category, amount, note });
-          setBusy(false);
-          if (!result.ok) return toast(result.error ?? "Could not save expense");
-          setExpenseOpen(false);
-          toast("Expense saved");
-          router.refresh();
-        }}
+        onSubmit={submitExpense}
       />
 
       <IncomeSheet
+        key={incomeOpen ? "income-open" : "income-closed"}
         open={incomeOpen}
+        categories={data.categories.income}
         busy={busy}
         onClose={() => setIncomeOpen(false)}
-        onSubmit={async (source, amount) => {
+        onSubmit={async (category, amount, note) => {
           setBusy(true);
-          const result = await addIncomeAction({ source, amount });
+          const result = await addIncomeAction({ category, amount, note });
           setBusy(false);
           if (!result.ok) return toast(result.error ?? "Could not save income");
           setIncomeOpen(false);
@@ -165,7 +277,10 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
       />
 
       <BudgetSheet
+        key={editingBudget?.id ?? (budgetOpen ? "budget-new" : "budget-closed")}
         open={budgetOpen}
+        entry={editingBudget}
+        categories={data.categories.expense}
         busy={busy}
         onClose={() => setBudgetOpen(false)}
         onSubmit={async (category, limit) => {
@@ -182,29 +297,50 @@ export function MoneyScreen({ data, initialTab = "exp" }: { data: MoneyData; ini
   );
 }
 
+function withCurrent(categories: string[], current?: string) {
+  return current && !categories.includes(current) ? [current, ...categories] : categories;
+}
+
 function ExpenseSheet({
   open,
+  entry,
+  categories,
   busy,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  entry: FinanceEntry | null;
+  categories: string[];
   busy: boolean;
   onClose: () => void;
-  onSubmit: (category: string, amount: number, note: string) => Promise<void>;
+  onSubmit: (values: ExpenseValues) => Promise<void>;
 }) {
-  const [category, setCategory] = useState("Transport");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
+  const options = withCurrent(categories, entry?.category);
+  const [category, setCategory] = useState(entry?.category ?? options[0] ?? "Other");
+  const [adding, setAdding] = useState(false);
+  const [custom, setCustom] = useState("");
+  const [amount, setAmount] = useState(entry ? String(entry.amount) : "");
+  const [note, setNote] = useState(entry?.notes ?? "");
+  const [frequency, setFrequency] = useState<ExpenseFrequency>(
+    entry?.frequency === "monthly" ? "monthly" : "daily",
+  );
+  const [entryDate, setEntryDate] = useState(entry?.entry_date ?? todayKey());
+  const chosen = adding ? custom.trim() : category;
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add expense">
-      <label htmlFor="e-cat">Category</label>
-      <select id="e-cat" value={category} onChange={(event) => setCategory(event.target.value)}>
-        {EXPENSE_CATEGORIES.map((item) => (
-          <option key={item}>{item}</option>
-        ))}
-      </select>
+    <BottomSheet open={open} onClose={onClose} title={entry ? "Edit expense" : "Add expense"}>
+      <CategoryField
+        id="e-cat"
+        label="Category"
+        categories={options}
+        value={category}
+        adding={adding}
+        custom={custom}
+        onValue={setCategory}
+        onAdding={setAdding}
+        onCustom={setCustom}
+      />
       <label htmlFor="e-amount">Amount (UGX)</label>
       <input
         id="e-amount"
@@ -213,15 +349,45 @@ function ExpenseSheet({
         value={amount}
         onChange={(event) => setAmount(event.target.value)}
       />
+      <label>Is this a daily or monthly expense?</label>
+      <div className="opts" role="group" aria-label="Expense frequency">
+        {EXPENSE_FREQUENCIES.map((option) => (
+          <button
+            type="button"
+            key={option}
+            className={`opt ${frequency === option ? "on" : ""}`}
+            aria-pressed={frequency === option}
+            onClick={() => setFrequency(option)}
+          >
+            {option === "daily" ? "Daily" : "Monthly"}
+          </button>
+        ))}
+      </div>
+      <label htmlFor="e-date">Date</label>
+      <input
+        id="e-date"
+        type="date"
+        max={todayKey()}
+        value={entryDate}
+        onChange={(event) => setEntryDate(event.target.value)}
+      />
       <label htmlFor="e-note">Note (optional)</label>
       <input id="e-note" value={note} onChange={(event) => setNote(event.target.value)} />
       <button
         className="btn"
         style={{ marginTop: 14 }}
-        disabled={busy}
-        onClick={() => onSubmit(category, Number(amount), note)}
+        disabled={busy || !chosen}
+        onClick={() =>
+          onSubmit({
+            category: chosen,
+            amount: Number(amount),
+            note,
+            frequency,
+            entry_date: entryDate,
+          })
+        }
       >
-        {busy ? "Saving…" : "Save expense"}
+        {busy ? "Saving…" : entry ? "Save changes" : "Save expense"}
       </button>
     </BottomSheet>
   );
@@ -229,26 +395,36 @@ function ExpenseSheet({
 
 function IncomeSheet({
   open,
+  categories,
   busy,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  categories: string[];
   busy: boolean;
   onClose: () => void;
-  onSubmit: (source: string, amount: number) => Promise<void>;
+  onSubmit: (category: string, amount: number, note: string) => Promise<void>;
 }) {
-  const [source, setSource] = useState("");
+  const [category, setCategory] = useState(categories[0] ?? "Other");
+  const [adding, setAdding] = useState(false);
+  const [custom, setCustom] = useState("");
   const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const chosen = adding ? custom.trim() : category;
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Add other income">
-      <label htmlFor="i-source">Source</label>
-      <input
-        id="i-source"
-        value={source}
-        onChange={(event) => setSource(event.target.value)}
-        placeholder="e.g. Tailoring job"
+      <CategoryField
+        id="i-cat"
+        label="Category"
+        categories={categories}
+        value={category}
+        adding={adding}
+        custom={custom}
+        onValue={setCategory}
+        onAdding={setAdding}
+        onCustom={setCustom}
       />
       <label htmlFor="i-amount">Amount (UGX)</label>
       <input
@@ -258,11 +434,13 @@ function IncomeSheet({
         value={amount}
         onChange={(event) => setAmount(event.target.value)}
       />
+      <label htmlFor="i-note">Note (optional)</label>
+      <input id="i-note" value={note} onChange={(event) => setNote(event.target.value)} />
       <button
         className="btn"
         style={{ marginTop: 14 }}
-        disabled={busy}
-        onClick={() => onSubmit(source, Number(amount))}
+        disabled={busy || !chosen}
+        onClick={() => onSubmit(chosen, Number(amount), note)}
       >
         {busy ? "Saving…" : "Save income"}
       </button>
@@ -272,26 +450,39 @@ function IncomeSheet({
 
 function BudgetSheet({
   open,
+  entry,
+  categories,
   busy,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  entry: Budget | null;
+  categories: string[];
   busy: boolean;
   onClose: () => void;
   onSubmit: (category: string, limit: number) => Promise<void>;
 }) {
-  const [category, setCategory] = useState("Transport");
-  const [limit, setLimit] = useState("");
+  const options = withCurrent(categories, entry?.category);
+  const [category, setCategory] = useState(entry?.category ?? options[0] ?? "Other");
+  const [adding, setAdding] = useState(false);
+  const [custom, setCustom] = useState("");
+  const [limit, setLimit] = useState(entry ? String(entry.monthly_limit) : "");
+  const chosen = adding ? custom.trim() : category;
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Set monthly budget">
-      <label htmlFor="b-cat">Category</label>
-      <select id="b-cat" value={category} onChange={(event) => setCategory(event.target.value)}>
-        {EXPENSE_CATEGORIES.map((item) => (
-          <option key={item}>{item}</option>
-        ))}
-      </select>
+      <CategoryField
+        id="b-cat"
+        label="Expense category"
+        categories={options}
+        value={category}
+        adding={adding}
+        custom={custom}
+        onValue={setCategory}
+        onAdding={setAdding}
+        onCustom={setCustom}
+      />
       <label htmlFor="b-limit">Limit (UGX)</label>
       <input
         id="b-limit"
@@ -303,8 +494,8 @@ function BudgetSheet({
       <button
         className="btn"
         style={{ marginTop: 14 }}
-        disabled={busy}
-        onClick={() => onSubmit(category, Number(limit))}
+        disabled={busy || !chosen}
+        onClick={() => onSubmit(chosen, Number(limit))}
       >
         {busy ? "Saving…" : "Save budget"}
       </button>
