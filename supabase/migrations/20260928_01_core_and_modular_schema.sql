@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.product_images (
 
 ALTER TABLE public.product_images ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage product images" ON public.product_images;
 CREATE POLICY "Vendors manage product images"
   ON public.product_images
   FOR ALL
@@ -95,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_vendor_created
 
 ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage customers" ON public.customers;
 CREATE POLICY "Vendors manage customers"
   ON public.customers
   FOR ALL
@@ -138,6 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_vendor_deleted
 
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage sales" ON public.sales;
 CREATE POLICY "Vendors manage sales"
   ON public.sales
   FOR ALL
@@ -168,6 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_sale_items_vendor_created ON public.sale_items (v
 
 ALTER TABLE public.sale_items ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage sale items" ON public.sale_items;
 CREATE POLICY "Vendors manage sale items"
   ON public.sale_items
   FOR ALL
@@ -196,6 +200,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_vendor_sale ON public.payments (vendor_i
 
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage payments" ON public.payments;
 CREATE POLICY "Vendors manage payments"
   ON public.payments
   FOR ALL
@@ -222,6 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_shop_suggestions_vendor ON public.shop_suggestion
 
 ALTER TABLE public.shop_suggestions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Vendors manage suggestions" ON public.shop_suggestions;
 CREATE POLICY "Vendors manage suggestions"
   ON public.shop_suggestions
   FOR ALL
@@ -248,6 +254,7 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
 );
 
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage suppliers" ON public.suppliers;
 CREATE POLICY "Vendors manage suppliers" ON public.suppliers FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = suppliers.vendor_id AND v.user_id = auth.uid())
 );
@@ -267,6 +274,7 @@ CREATE TABLE IF NOT EXISTS public.purchases (
 );
 
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage purchases" ON public.purchases;
 CREATE POLICY "Vendors manage purchases" ON public.purchases FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = purchases.vendor_id AND v.user_id = auth.uid())
 );
@@ -284,6 +292,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_items (
 );
 
 ALTER TABLE public.purchase_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage purchase items" ON public.purchase_items;
 CREATE POLICY "Vendors manage purchase items" ON public.purchase_items FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = purchase_items.vendor_id AND v.user_id = auth.uid())
 );
@@ -305,6 +314,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
 );
 
 ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage purchase orders" ON public.purchase_orders;
 CREATE POLICY "Vendors manage purchase orders" ON public.purchase_orders FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = purchase_orders.vendor_id AND v.user_id = auth.uid())
 );
@@ -324,6 +334,7 @@ CREATE TABLE IF NOT EXISTS public.damaged_items (
 );
 
 ALTER TABLE public.damaged_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage damaged items" ON public.damaged_items;
 CREATE POLICY "Vendors manage damaged items" ON public.damaged_items FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = damaged_items.vendor_id AND v.user_id = auth.uid())
 );
@@ -352,6 +363,7 @@ CREATE TABLE IF NOT EXISTS public.quotations (
 );
 
 ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage quotations" ON public.quotations;
 CREATE POLICY "Vendors manage quotations" ON public.quotations FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = quotations.vendor_id AND v.user_id = auth.uid())
 );
@@ -372,6 +384,7 @@ CREATE TABLE IF NOT EXISTS public.activity_log (
 CREATE INDEX IF NOT EXISTS idx_activity_log_vendor ON public.activity_log (vendor_id, created_at DESC);
 
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage activity log" ON public.activity_log;
 CREATE POLICY "Vendors manage activity log" ON public.activity_log FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = activity_log.vendor_id AND v.user_id = auth.uid())
 );
@@ -405,6 +418,7 @@ CREATE TABLE IF NOT EXISTS public.shop_members (
 );
 
 ALTER TABLE public.shop_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage shop members" ON public.shop_members;
 CREATE POLICY "Vendors manage shop members" ON public.shop_members FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = shop_members.vendor_id AND v.user_id = auth.uid())
 );
@@ -423,6 +437,7 @@ CREATE TABLE IF NOT EXISTS public.stores (
 );
 
 ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage stores" ON public.stores;
 CREATE POLICY "Vendors manage stores" ON public.stores FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = stores.vendor_id AND v.user_id = auth.uid())
 );
@@ -439,6 +454,7 @@ CREATE TABLE IF NOT EXISTS public.stock_levels (
 );
 
 ALTER TABLE public.stock_levels ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage stock levels" ON public.stock_levels;
 CREATE POLICY "Vendors manage stock levels" ON public.stock_levels FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = stock_levels.vendor_id AND v.user_id = auth.uid())
 );
@@ -456,6 +472,7 @@ CREATE TABLE IF NOT EXISTS public.stock_transfers (
 );
 
 ALTER TABLE public.stock_transfers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Vendors manage stock transfers" ON public.stock_transfers;
 CREATE POLICY "Vendors manage stock transfers" ON public.stock_transfers FOR ALL USING (
   EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = stock_transfers.vendor_id AND v.user_id = auth.uid())
 );
