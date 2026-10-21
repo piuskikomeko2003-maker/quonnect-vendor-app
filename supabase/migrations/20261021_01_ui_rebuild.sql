@@ -127,6 +127,20 @@ DROP POLICY IF EXISTS "Public can view active products" ON public.products;
 DROP POLICY IF EXISTS "Anyone can view active products" ON public.products;
 DROP POLICY IF EXISTS "Public read active products" ON public.products;
 
+-- Remove any other legacy public SELECT policy on products. The customer
+-- preview uses the owner's authenticated session, not an anonymous query.
+DO $$
+DECLARE
+  policy_row record;
+BEGIN
+  FOR policy_row IN
+    SELECT policyname FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'products' AND cmd = 'SELECT'
+  LOOP
+    EXECUTE format('DROP POLICY %I ON public.products', policy_row.policyname);
+  END LOOP;
+END $$;
+
 -- --------------------------------------------------------------------
 -- 6. Stalls for every vendor + updated_at helpers
 -- --------------------------------------------------------------------
@@ -286,6 +300,10 @@ CREATE POLICY "Vendors delete vendor assets" ON storage.objects
       )
     )
   );
+
+-- Retire the legacy stock report RPC. It treated a NULL viewer id as the
+-- owner, which would let any authenticated caller read another vendor's stock.
+DROP FUNCTION IF EXISTS public.report_stock(uuid, date, date, text, boolean, uuid);
 
 -- --------------------------------------------------------------------
 -- 8. Transactional RPCs
@@ -859,7 +877,7 @@ BEGIN
   FROM public.sales
   WHERE vendor_id = p_vendor_id AND sale_date >= v_month_start AND sale_date < v_month_end AND deleted_at IS NULL;
 
-  SELECT COALESCE(SUM(price_reduction), 0) INTO v_reduction
+  SELECT COALESCE(SUM(GREATEST(price_reduction, 0)), 0) INTO v_reduction
   FROM public.sales
   WHERE vendor_id = p_vendor_id AND sale_date >= v_month_start AND sale_date < v_month_end AND deleted_at IS NULL;
 

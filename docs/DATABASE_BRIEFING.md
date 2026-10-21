@@ -18,7 +18,7 @@ Apply with:
 ```bash
 npx supabase link --project-ref <ref>
 npx supabase db push
-npx supabase gen types typescript --linked > src/types/app-db.ts
+npx supabase gen types typescript --linked > src/types/database.types.ts
 ```
 
 ## Core tables

@@ -16,13 +16,19 @@ import { Thumb } from "@/components/ui/Thumb";
 import { useToast } from "@/components/ui/Toast";
 import { STALL_COLORS } from "@/lib/constants";
 import { formatUGX } from "@/lib/format";
-import { effectivePrice } from "@/lib/product";
+import { colorNames, effectivePrice } from "@/lib/product";
 import type { StallData } from "@/lib/types";
+import type { Product } from "@/types/app-db";
 
 export function StallScreen({ data }: { data: StallData }) {
   const router = useRouter();
   const toast = useToast();
-  const { vendor, stall, products } = data;
+  const { vendor, stall } = data;
+  const [overrides, setOverrides] = useState<Record<string, Partial<Product>>>({});
+  const products = data.products.map((product) => ({
+    ...product,
+    ...(overrides[product.id] ?? {}),
+  }));
   const published = products.filter((product) => product.is_active);
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,14 +40,26 @@ export function StallScreen({ data }: { data: StallData }) {
   const [discount, setDiscount] = useState("0");
 
   async function togglePublished(productId: string, next: boolean) {
+    setOverrides((current) => ({ ...current, [productId]: { is_active: next } }));
     const result = await setProductPublishedAction(productId, next);
-    if (!result.ok) return toast(result.error ?? "Could not update listing");
+    if (!result.ok) {
+      setOverrides((current) => {
+        const copy = { ...current };
+        delete copy[productId];
+        return copy;
+      });
+      return toast(result.error ?? "Could not update listing");
+    }
     toast(next ? "Now live on your stall" : "Hidden from your stall");
     router.refresh();
   }
 
   async function saveDiscount() {
     if (!dealProduct) return;
+    setOverrides((current) => ({
+      ...current,
+      [dealProduct.id]: { discount_pct: Math.max(0, Math.min(90, Math.round(Number(discount) || 0))) },
+    }));
     const result = await setProductDiscountAction(dealProduct.id, Number(discount));
     if (!result.ok) return toast(result.error ?? "Could not save discount");
     setDealProduct(null);
@@ -108,7 +126,7 @@ export function StallScreen({ data }: { data: StallData }) {
                 <b>{product.name}</b>
                 <small>
                   {product.stock} in stock
-                  {product.colors?.length ? ` · ${product.colors.join(", ")}` : ""}
+                  {colorNames(product.colors).length ? ` · ${colorNames(product.colors).join(", ")}` : ""}
                   {product.discount_pct ? ` · ${product.discount_pct}% off` : ""}
                   {product.sizes?.length ? ` · Sizes ${product.sizes.join(", ")}` : ""}
                 </small>
@@ -157,7 +175,7 @@ export function StallScreen({ data }: { data: StallData }) {
                 <b style={{ color: stall.accent_color }}>{formatUGX(effectivePrice(product))}</b>
                 <div style={{ fontSize: 10.5, color: "var(--mut)", marginTop: 3 }}>
                   {product.stock > 0
-                    ? [product.colors?.join(" · "), (product.sizes || []).join(" ")]
+                    ? [colorNames(product.colors).join(" · "), (product.sizes || []).join(" ")]
                         .filter(Boolean)
                         .join(" | ") || "In stock"
                     : "Sold out"}

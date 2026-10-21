@@ -28,7 +28,7 @@ The project must have the migrations in `supabase/migrations/` applied:
 ```bash
 npx supabase link --project-ref <project-ref>
 npx supabase db push
-npx supabase gen types typescript --linked > src/types/app-db.ts
+npx supabase gen types typescript --linked > src/types/database.types.ts
 ```
 
 Migration order:
@@ -38,7 +38,7 @@ Migration order:
 3. `20260928_02_report_stock_rpc.sql` — existing stock report RPC.
 4. `20261021_01_ui_rebuild.sql` — stalls, stock movements, budgets, profile/product/sale columns, storage policies, transactional RPCs and dashboard aggregates.
 
-`src/types/app-db.ts` mirrors the final schema. Regenerate it after any migration instead of hand-editing.
+`src/types/database.types.ts` mirrors the final schema; `src/types/app-db.ts` re-exports `AppDatabase` and row aliases. Regenerate after any migration instead of hand-editing the generated file.
 
 ## Commands
 
@@ -49,6 +49,7 @@ Migration order:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm run seed:demo -- --email you@example.com` | Dev-only demo history (requires service-role key). Add `--reset` to replace demo rows. |
+| `npm run test:unit` | Pure-logic tests (formatting, axes, discounts, receipt text) |
 | `npm run test:acceptance` | Database acceptance tests (sales, net profit, month switch, RLS). Requires a reachable project + service-role key. |
 | `node scripts/ui-screenshots.mjs` | Visual QA screenshots at 430px into `docs/ui-checks/` (dev server running) |
 | `node scripts/ui-interactions.mjs` | Sheet/cart screenshots |

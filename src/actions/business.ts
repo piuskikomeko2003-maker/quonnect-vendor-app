@@ -234,6 +234,9 @@ export async function setBudgetAction(input: BudgetInput): Promise<SimpleResult>
   const { supabase, vendor } = await requireVendor();
   const limit = Math.round(Number(input.monthly_limit));
   if (!Number.isFinite(limit) || limit <= 0) return { ok: false, error: "Enter a limit" };
+  if (!EXPENSE_CATEGORIES.includes(input.category as (typeof EXPENSE_CATEGORIES)[number])) {
+    return { ok: false, error: "Choose an expense category" };
+  }
 
   const { error } = await supabase.from("budgets").upsert(
     {

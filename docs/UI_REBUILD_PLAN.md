@@ -128,7 +128,7 @@ Tables: `vendors`, `products`, `finance_entries`, `customers`, `sales`, `sale_it
 - Sale writes in a transaction with stock decrement (the old POS does this partially — the new
   RPC will make it atomic).
 - Product photo upload retry/backoff idea.
-- `report_stock` RPC is not needed by the new UI, but the table/function can remain.
+- `report_stock` RPC is not needed by the new UI; it is dropped in the rebuild migration because its NULL viewer id path bypassed ownership.
 
 ---
 

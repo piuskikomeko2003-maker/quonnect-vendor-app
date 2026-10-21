@@ -107,7 +107,12 @@ export async function signInAction(email: string, password: string): Promise<Act
     password,
   });
 
-  if (error) return { ok: false, error: "Wrong email or password" };
+  if (error) {
+    if (error.message.toLowerCase().includes("email not confirmed")) {
+      return { ok: false, error: "Confirm your email first, then log in" };
+    }
+    return { ok: false, error: "Wrong email or password" };
+  }
   if (data.user) await ensureVendorProfile(supabase, data.user);
   return { ok: true };
 }

@@ -17,3 +17,17 @@ export function productIcon(
   if (name.includes("bag")) return "bag";
   return "box";
 }
+
+/** Accepts both the new text[] colours and legacy {name,hex} JSON colours. */
+export function colorNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && "name" in entry) {
+        return String((entry as { name: unknown }).name);
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
