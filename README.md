@@ -56,6 +56,7 @@ Migration order:
 | --- | --- |
 | `npm run dev` | Next dev server |
 | `npm run check:supabase` | Check DNS and HTTP reachability of the configured Supabase project |
+| `npm run db:apply` | Apply the validated schema bundle using `SUPABASE_DB_URL` (one transaction) |
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
@@ -120,6 +121,12 @@ The rebuild reuses `finance_entries` as the single ledger instead of introducing
 - `scripts/seed-demo.ts` — demo generator. It is never imported by the app and must only be run against a dev project.
 - `scripts/ui-*.mjs` — Playwright screenshot helpers.
 
-## Current blocker
+## Database status
 
-The Supabase project referenced by `.env.local` (`akfktjvckvlfclkwjppn.supabase.co`) did not resolve from the build machine (NXDOMAIN), so the live schema/RLS and end-to-end acceptance tests could not be executed here. The migrations and type contract are ready; run `db push` against a reachable project, then complete the checks in `docs/UI_REBUILD_PLAN.md` §8.
+The live project `akfktjvckvlfclkwjppn` has the full schema applied:
+tables, columns, RLS, storage policies, transactional RPCs and dashboard
+aggregates. `npm run test:acceptance` passes 19/19 against it.
+
+Email confirmation is enabled in Supabase Auth, so new signups must confirm
+their email before logging in. Existing vendors without a profile are repaired
+by `/setup` on first visit.

@@ -2,7 +2,7 @@
 
 Date: 2026-10-21
 Branch: `feat/ui-rebuild`
-Environment: macOS, Next.js 16.3.5, Supabase project `akfktjvckvlfclkwjppn` (unreachable from this machine)
+Project: `akfktjvckvlfclkwjppn` (schema applied, migrations recorded)
 
 ## Automated checks
 
@@ -11,48 +11,51 @@ Environment: macOS, Next.js 16.3.5, Supabase project `akfktjvckvlfclkwjppn` (unr
 | `npx tsc --noEmit` | PASS |
 | `npm run lint` | PASS (0 errors, 0 warnings) |
 | `npm run build` | PASS |
+| `npm run test:unit` | PASS — 7 tests |
+| `npm run test:acceptance` | **PASS — 19/19** |
 | Playwright 430px screenshots, all screens | PASS, 0 console errors |
-| Signup 3-step navigation (Account → Business → Social) | PASS, 0 console errors |
-| Visual review vs `quonnect-vendor-app.html` | PASS after fixes (header, headings, chip icon layout, auth hero, chart date labels, receipt) |
-| `npm run test:unit` | PASS (7 tests: money, axes, discount, range cap, WhatsApp, receipt text) |
-| `npm run test:acceptance` | BLOCKED — project DNS `NXDOMAIN`; no `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` |
+| Visual review vs `quonnect-vendor-app.html` | PASS after fixes |
+| Live signup → confirm → login → logout → login | PASS, 0 console errors |
 
-Screenshots are in `docs/ui-checks/` (`app-*.png` and `prototype-*.png` side by side, plus sheets/cart/receipt).
+Screenshots are in `docs/ui-checks/`.
 
-## Database acceptance tests (script ready)
+## Database acceptance tests
 
-`scripts/acceptance-tests.ts` covers:
+Run against the live project with two temporary vendors. Both test users and their cascaded rows were deleted afterwards.
 
-1. Create two vendors through Supabase Auth + signup trigger.
-2. Create jeans (27,000 price / 16,000 cost / 9 stock), sell one at 25,000.
-3. Assert stock 8, profit 9,000, price reduction 2,000, sale-item snapshots 27,000 / 25,000 / 16,000.
-4. Assert Home `price_reduction` = 2,000.
-5. Add a 500,000 `Stock purchase` expense and assert Home net profit is unchanged.
-6. Add a 100,000 `Transport` expense and assert the day's net profit is negative (red bar input).
-7. Assert the previous-month dropdown data differs.
-8. Publish, hide and discount a product and verify the persisted state.
-9. RLS: vendor B cannot select/update/insert vendor A rows and cannot call `create_sale` for vendor A.
+| # | Test | Result |
+| --- | --- | --- |
+| 1 | Product created with stock 9 | PASS |
+| 2 | Sale RPC succeeds | PASS |
+| 3 | Stock drops to 8 | PASS |
+| 4 | Sale total 25,000 | PASS |
+| 5 | Sale profit 9,000 | PASS |
+| 6 | Price reduction 2,000 | PASS |
+| 7 | Sale item stores listed 27,000 / sold 25,000 / cost 16,000 | PASS |
+| 8 | Home shows 2,000 price reductions | PASS |
+| 9 | Stock-purchase expense does not change net profit | PASS |
+| 10 | Loss day has negative net profit (red bar input) | PASS |
+| 11 | Previous month figures differ | PASS |
+| 12 | Product can be hidden | PASS |
+| 13 | Product can be published with a discount | PASS |
+| 14 | Vendor B cannot see vendor A | PASS |
+| 15 | Vendor B cannot see vendor A products | PASS |
+| 16 | Vendor B cannot update vendor A products | PASS |
+| 17 | Vendor B cannot insert under vendor A | PASS |
+| 18 | Vendor B cannot sell vendor A stock | PASS |
 
-Run once a reachable project and service-role key are available:
+## Live application flow
 
-```bash
-npm run test:acceptance
-```
+- Created a real account through the 3-step signup form.
+- Supabase email confirmation was enabled, so the app correctly showed “Check your inbox”.
+- Confirmed the test user through the admin API (test-only), then logged in through `/login` → `/home`.
+- Logged out from `/profile` → `/login`.
+- Logged in again → `/home`.
+- No console errors.
 
-## Code-verified rules
+## Notes
 
-- Atomic sale + stock decrement + `stock_movements`: `create_sale` (SECURITY INVOKER, row locks, stock check).
-- Restock + optional stock-purchase expense: `restock_product`.
-- Net profit excludes `Stock purchase` in Home, daily series, monthly series and Analytics.
-- Price override snapshots and receipt "You saved" logic.
-- Receipt canvas/share/download/WhatsApp text (`src/lib/receipt.ts`), visually checked.
-- RLS policies for `vendors`, `products`, `sales`, `sale_items`, `finance_entries`, `stalls`, `stock_movements`, `budgets`; product public-read policy removed.
-
-## Not run
-
-- Live signup → logout → login round trip.
-- Real RLS isolation against the live database.
-- Month dropdown / profit ranges against seeded production data.
-- Any test that requires Supabase Auth email delivery.
-
-These all require a reachable Supabase project. The blocker is environmental, not a failing assertion.
+1. Email confirmation is enabled in Supabase Auth. New users must confirm before logging in.
+2. The existing `piuskikomeko2003@gmail.com` account had no signup metadata, so it was repaired with a placeholder `My Stall` vendor/stall. Set the real business name, category, location and logo in **Profile**.
+3. The legacy `report_stock` RPC was removed because it allowed cross-vendor reads through a NULL viewer id.
+4. Access tokens and service-role keys were used only for setup/testing and removed from `.env.local`.
