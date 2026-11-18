@@ -1,36 +1,28 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/proxy";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { AUTH_MARKER_COOKIE, resolveAuthRedirect } from "@/lib/auth-redirect";
 
-const AUTH_ROUTES = ["/login", "/signup"];
+/**
+ * Optimistic redirects before React renders.
+ *
+ * `/` used to be a client component that waited for JS, hydration and a
+ * Supabase `getSession()` call before deciding where to go. That added a full
+ * route hop to every cold start. The cookie only records that a session
+ * *might* exist; real validation still happens in the browser and in RLS.
+ */
+export function proxy(request: NextRequest) {
+  const destination = resolveAuthRedirect(
+    request.nextUrl.pathname,
+    request.cookies.has(AUTH_MARKER_COOKIE),
+  );
 
-function redirectWithCookies(request: NextRequest, path: string, response: NextResponse) {
-  const url = request.nextUrl.clone();
-  url.pathname = path;
-  url.search = "";
-  const redirect = NextResponse.redirect(url);
-  response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
-  return redirect;
-}
-
-export async function proxy(request: NextRequest) {
-  const { response, user } = await updateSession(request);
-  const { pathname } = request.nextUrl;
-  const isAuthRoute = AUTH_ROUTES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
-  const isPreview = pathname.startsWith("/preview");
-
-  if (!user && !isAuthRoute && !isPreview) {
-    return redirectWithCookies(request, "/login", response);
+  if (destination) {
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
-  if (user && (isAuthRoute || pathname === "/")) {
-    return redirectWithCookies(request, "/home", response);
-  }
-
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
-  ],
+  matcher: ["/", "/login/:path*", "/signup/:path*"],
 };

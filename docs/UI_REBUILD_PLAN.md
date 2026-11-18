@@ -4,6 +4,12 @@
 **Source of truth:** `quonnect-vendor-app.html` (read in full, 1,124 lines)
 **Status:** Step 0 audit complete. **No application files have been deleted or modified.**
 
+> **Addendum (November 2026):** The app has since moved beyond this original six-tab plan. The
+> current navigation is Home · Business · My Stall · Orders · Menu, and the Business hub combines
+> money, analytics and customers. `/customers`, `/orders`, `/settings`, `/notifications`, `/help`
+> and `/menu` are now live. See [`BUSINESS_MODULES_AND_NAVIGATION.md`](./BUSINESS_MODULES_AND_NAVIGATION.md)
+> for the current module map and feature-flag rules.
+
 > **Important:** `main` already had 18 uncommitted modified files before this branch was created.
 > They are preserved on `feat/ui-rebuild` and are treated as user work. They will be superseded
 > by the rebuild, but not discarded without the go-ahead.

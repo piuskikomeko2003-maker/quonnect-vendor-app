@@ -10,6 +10,7 @@ The UI is a 1:1 rebuild of `quonnect-vendor-app.html`, rendered inside a centred
 npm install
 cp .env.example .env.local   # then fill in your Supabase keys
 npm run dev                  # http://localhost:3000
+npm run dev:lan              # prints the tablet URL, then serves on 0.0.0.0
 ```
 
 Required env:
@@ -47,6 +48,10 @@ Migration order:
 2. `20260928_01_core_and_modular_schema.sql` — existing modular schema.
 3. `20260928_02_report_stock_rpc.sql` — existing stock report RPC.
 4. `20261021_01_ui_rebuild.sql` — stalls, stock movements, budgets, profile/product/sale columns, storage policies, transactional RPCs and dashboard aggregates.
+5. `20261023_01_product_categories.sql` — per-vendor custom product categories.
+6. `20261023_02_vendor_month_start.sql` — configurable business-month start day.
+7. `20261029_01_product_photo_gallery.sql` — ordered `photo_urls` gallery (up to 8) with the first photo mirrored to `photo_url`.
+8. `20261102_01_dashboard_accounts.sql` — business accounts, append-only account movements and the period-based dashboard RPC.
 
 `src/types/database.types.ts` mirrors the final schema; `src/types/app-db.ts` re-exports `AppDatabase` and row aliases. Regenerate after any migration instead of hand-editing the generated file.
 
@@ -55,6 +60,7 @@ Migration order:
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Next dev server |
+| `npm run dev:lan` | Print the current tablet URL, then serve on `0.0.0.0` for Wi-Fi testing |
 | `npm run check:supabase` | Check DNS and HTTP reachability of the configured Supabase project |
 | `npm run db:apply` | Apply the validated schema bundle using `SUPABASE_DB_URL` (one transaction) |
 | `npm run build` | Production build |
@@ -71,13 +77,21 @@ Migration order:
 | Route | Purpose |
 | --- | --- |
 | `/login`, `/signup` | Email/password auth and 3-step vendor signup |
-| `/home` | Sales today, spend today, month summary, budget, profit trend, transactions, low stock |
+| `/home` | Reporting-period dashboard: available funds, sales, expenses, profit, customer balances, stock value, charts, insights and quick actions |
+| `/business` | Business hub: income & expenses, analytics and customers in one place |
 | `/sell` | Product chips, editable sold price, transactional sale, receipts |
 | `/stock` | Stock value, categories, product registration, restock |
-| `/money` | Expenses, other income, budgets |
-| `/analytics` | Growth, monthly sales, expense trend, cost vs price |
+| `/money` | Standalone expenses, other income and budgets (also embedded in `/business`) |
+| `/analytics` | Standalone growth, monthly sales, expense trend, cost vs price (also embedded in `/business`) |
+| `/orders` | Sales, bookings and messages |
+| `/customers` | Customer directory and spend history (also embedded in `/business`) |
 | `/stall` | Listings, publish toggles, deals, stall customisation, customer preview (owner session) |
+| `/menu` | Account, business tools, support and logout |
+| `/settings` | Profit-month setting and account links |
+| `/notifications`, `/help` | Tips and support |
 | `/profile` | Vendor/business/social details, logo, password, logout |
+
+The bottom bar is **Home · Business · My Stall · Orders · Menu**. Legacy money, analytics and customer routes still work and highlight the Business tab; settings, notifications, help and profile highlight Menu.
 
 Auth is enforced by `src/proxy.ts` (Next 16's replacement for middleware). Signed-in users are redirected from `/` and auth pages to `/home`.
 
@@ -99,9 +113,23 @@ src/lib/constants.ts    categories, sizes, palette, analytics groups
 
 Server components load data; client components only handle interaction. Writes go through server actions, then `revalidatePath`, so numbers update immediately. No chart or UI library is used; charts are ports of the prototype's SVG algorithms.
 
+## Feature flags
+
+Feature visibility is centralised in `src/lib/features.ts`. Core features (`home`, `sales`, `stock`,
+`money`) are always on. Stage 1 optional features (`customers`, `suppliers`, `budgets`, `accounts`,
+`analytics`, `insights`) are on for existing vendors and off for new signups until enabled. The
+Business hub, Home quick actions and Menu use `hasFeature()` so hidden features do not leave dead
+links. Stage 2/3 keys (`staff`, `purchasing`, `branches`, etc.) are reserved for later modules.
+
+See [`docs/BUSINESS_MODULES_AND_NAVIGATION.md`](docs/BUSINESS_MODULES_AND_NAVIGATION.md) for the
+route map, Business hub, feature-gating rules and current UX principles.
+
 ## Business rules
 
+See [`docs/FINANCE_AND_STOCK_LOGIC.md`](docs/FINANCE_AND_STOCK_LOGIC.md) for the full finance, stock and profit model, including worked examples and known edge cases.
+
 - Effective price = `price × (1 − discount_pct / 100)`.
+- A product holds up to 8 photos in `photo_urls`; the first is the cover and is mirrored to `photo_url` for legacy thumbnails and reports.
 - Each sale item stores `listed_price`, `sold_price` and `unit_cost` at sale time.
 - Sale profit = `Σ((sold − unit_cost) × qty)`; price reduction = `Σ((listed − sold) × qty)`.
 - `create_sale` is atomic: it locks products, validates stock, decrements, writes `stock_movements`, then writes the sale and items. Stock can never go negative.

@@ -12,6 +12,12 @@ import { useToast } from "@/components/ui/Toast";
 
 const STEPS = ["Your account", "Your business", "Social media"];
 
+function errorMessage(cause: unknown) {
+  if (cause instanceof Error && cause.message) return cause.message;
+  if (typeof cause === "string" && cause) return cause;
+  return "Could not reach the server. Check that the tablet is on the same Wi-Fi as the laptop.";
+}
+
 export function SignupForm() {
   const router = useRouter();
   const toast = useToast();
@@ -62,33 +68,41 @@ export function SignupForm() {
       return;
     }
     setBusy(true);
-    const result = await signUpAction({
-      ownerName,
-      phone,
-      email,
-      password,
-      businessName,
-      category,
-      location,
-      motto,
-      instagram,
-      facebook,
-      tiktok,
-      whatsapp,
-      logoDataUrl,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error ?? "Could not create your account");
-      return;
+    setError("");
+    try {
+      const result = await signUpAction({
+        ownerName,
+        phone,
+        email,
+        password,
+        businessName,
+        category,
+        location,
+        motto,
+        instagram,
+        facebook,
+        tiktok,
+        whatsapp,
+        logoDataUrl,
+      });
+      if (!result.ok) {
+        console.error("[signup] Supabase sign-up failed:", result.error);
+        setError(result.error ?? "Could not create your account");
+        return;
+      }
+      if (result.needsConfirmation) {
+        setDone(true);
+        return;
+      }
+      toast(`Welcome, ${ownerName.split(/\s+/)[0] || "vendor"}`);
+      router.replace("/home");
+      router.refresh();
+    } catch (cause) {
+      console.error("[signup] Unexpected sign-up error:", cause);
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
     }
-    if (result.needsConfirmation) {
-      setDone(true);
-      return;
-    }
-    toast(`Welcome, ${ownerName.split(/\s+/)[0] || "vendor"}`);
-    router.replace("/home");
-    router.refresh();
   }
 
   async function onLogo(file: File | undefined) {
@@ -107,12 +121,16 @@ export function SignupForm() {
         <AuthHero title="Check your inbox" subtitle="One last step to open your stall" />
         <div className="authbody">
           <div className="card center">
-            <div className="bigav" style={{ width: 64, height: 64 }}>
+            <div className="bigav bigav-sm">
               <Icon name="check" size={32} />
             </div>
             <h2 style={{ fontSize: 18, marginTop: 12 }}>Confirm your email</h2>
             <p style={{ fontSize: 13, color: "var(--mut)", marginTop: 6 }}>
-              We sent a confirmation link to <b>{email}</b>. Open it, then log in.
+              We sent a confirmation link to <b>{email}</b>. Open it on this tablet and you will
+              be signed in automatically — no need to enter your password again.
+            </p>
+            <p style={{ fontSize: 12, color: "var(--mut)", marginTop: 8 }}>
+              If you open the link on another device, come back here and log in.
             </p>
             <Link className="btn" href="/login" style={{ marginTop: 16 }}>
               Go to log in

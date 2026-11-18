@@ -76,19 +76,26 @@ export const CATEGORY_ICONS: Record<string, IconKey> = {
 };
 
 export const STALL_COLORS = [
-  "#0F8A4D",
-  "#0F766E",
   "#1D4ED8",
+  "#0F766E",
   "#0EA5E9",
   "#B45309",
   "#9D174D",
   "#4C1D95",
   "#10241F",
+  "#1E40AF",
 ];
 
 export const PAYMENT_METHODS = ["Cash", "MTN MoMo", "Airtel Money", "Card"];
 
-export const DEFAULT_ACCENT = "#0F8A4D";
+export const DEFAULT_ACCENT = "#1D4ED8";
+
+/** Green was the old default; surface the new royal-blue brand instead. */
+export function normalizeAccent(value: string | null | undefined): string {
+  const color = (value ?? "").trim().toLowerCase();
+  if (!color || color === "#0f8a4d") return DEFAULT_ACCENT;
+  return color;
+}
 
 export const ANALYTICS_RANGES = [
   ["7d", "7 days"],
@@ -117,9 +124,9 @@ export const GROUP_NAMES: Record<GroupBy, string> = {
 };
 
 export const METRIC_COLORS: Record<Metric, string> = {
-  sales: "#0F8A4D",
-  expenses: "#D97706",
-  profit: "#2563EB",
+  sales: "#1D4ED8",
+  expenses: "#9AA59F",
+  profit: "#60A5FA",
 };
 
 export type IconKey =
@@ -166,4 +173,8 @@ export type IconKey =
   | "instagram"
   | "facebook"
   | "tiktok"
-  | "whatsapp";
+  | "whatsapp"
+  | "bell"
+  | "gear"
+  | "orders"
+  | "menu";

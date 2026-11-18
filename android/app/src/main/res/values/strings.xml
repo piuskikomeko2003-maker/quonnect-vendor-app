@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Quonnect Vendor</string>
+    <string name="title_activity_main">Quonnect Vendor</string>
+    <string name="package_name">com.quonnect.vendor</string>
+    <string name="custom_url_scheme">com.quonnect.vendor</string>
+</resources>

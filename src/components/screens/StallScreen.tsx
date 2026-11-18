@@ -6,21 +6,34 @@ import {
   createProductAction,
   setProductDiscountAction,
   setProductPublishedAction,
+  updateProductAction,
 } from "@/actions/business";
 import { updateStallAction } from "@/actions/settings";
 import { ProductSheet } from "@/components/screens/ProductSheet";
+import { AdCarousel } from "@/components/ui/AdCarousel";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Icon } from "@/components/ui/Icon";
+import { MoneyText } from "@/components/ui/MoneyText";
 import { Avatar } from "@/components/ui/Avatar";
+import { ProductGallery } from "@/components/ui/ProductGallery";
 import { Thumb } from "@/components/ui/Thumb";
 import { useToast } from "@/components/ui/Toast";
 import { STALL_COLORS } from "@/lib/constants";
-import { formatUGX } from "@/lib/format";
 import { colorNames, effectivePrice } from "@/lib/product";
+import { productImages } from "@/lib/product-images";
+import { POSTERS } from "@/lib/posters";
 import type { StallData } from "@/lib/types";
 import type { Product } from "@/types/app-db";
 
-export function StallScreen({ data }: { data: StallData }) {
+export function StallScreen({
+  data,
+  customCategories = [],
+  initialCustomise = false,
+}: {
+  data: StallData;
+  customCategories?: string[];
+  initialCustomise?: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const { vendor, stall } = data;
@@ -29,56 +42,109 @@ export function StallScreen({ data }: { data: StallData }) {
     ...product,
     ...(overrides[product.id] ?? {}),
   }));
+  const categoryOptions = Array.from(
+    new Set([
+      ...customCategories,
+      ...(products.map((product) => product.category).filter(Boolean) as string[]),
+    ]),
+  );
   const published = products.filter((product) => product.is_active);
   const [addOpen, setAddOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [busy, setBusy] = useState(false);
-  const [customOpen, setCustomOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(initialCustomise);
   const [dealProduct, setDealProduct] = useState<(typeof products)[number] | null>(null);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [name, setName] = useState(stall.name);
   const [tagline, setTagline] = useState(stall.tagline);
   const [color, setColor] = useState(stall.accent_color);
   const [discount, setDiscount] = useState("0");
+  const [discountBusy, setDiscountBusy] = useState(false);
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+
+  function revertOverride(productId: string) {
+    setOverrides((current) => {
+      const copy = { ...current };
+      delete copy[productId];
+      return copy;
+    });
+  }
 
   async function togglePublished(productId: string, next: boolean) {
+    if (pending[productId]) return;
+    setPending((current) => ({ ...current, [productId]: true }));
     setOverrides((current) => ({ ...current, [productId]: { is_active: next } }));
-    const result = await setProductPublishedAction(productId, next);
-    if (!result.ok) {
-      setOverrides((current) => {
+    try {
+      const result = await setProductPublishedAction(productId, next);
+      if (!result.ok) {
+        revertOverride(productId);
+        toast(result.error ?? "Could not update listing");
+        return;
+      }
+      toast(next ? "Now live on your stall" : "Hidden from your stall");
+      router.refresh();
+    } catch {
+      revertOverride(productId);
+      toast("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setPending((current) => {
         const copy = { ...current };
         delete copy[productId];
         return copy;
       });
-      return toast(result.error ?? "Could not update listing");
     }
-    toast(next ? "Now live on your stall" : "Hidden from your stall");
-    router.refresh();
   }
 
   async function saveDiscount() {
-    if (!dealProduct) return;
+    if (!dealProduct || discountBusy) return;
+    const productId = dealProduct.id;
+    setDiscountBusy(true);
     setOverrides((current) => ({
       ...current,
-      [dealProduct.id]: { discount_pct: Math.max(0, Math.min(90, Math.round(Number(discount) || 0))) },
+      [productId]: { discount_pct: Math.max(0, Math.min(90, Math.round(Number(discount) || 0))) },
     }));
-    const result = await setProductDiscountAction(dealProduct.id, Number(discount));
-    if (!result.ok) return toast(result.error ?? "Could not save discount");
-    setDealProduct(null);
-    toast("Discount live on stall");
-    router.refresh();
+    try {
+      const result = await setProductDiscountAction(productId, Number(discount));
+      if (!result.ok) {
+        revertOverride(productId);
+        toast(result.error ?? "Could not save discount");
+        return;
+      }
+      setDealProduct(null);
+      toast("Discount live on stall");
+      router.refresh();
+    } catch {
+      revertOverride(productId);
+      toast("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setDiscountBusy(false);
+    }
   }
 
   async function saveStall() {
     setBusy(true);
-    const result = await updateStallAction({ name, tagline, accent_color: color });
-    setBusy(false);
-    if (!result.ok) return toast(result.error ?? "Could not update stall");
-    setCustomOpen(false);
-    toast("Stall updated");
-    router.refresh();
+    try {
+      const result = await updateStallAction({ name, tagline, accent_color: color });
+      if (!result.ok) {
+        toast(result.error ?? "Could not update stall");
+        return;
+      }
+      setCustomOpen(false);
+      toast("Stall updated");
+      router.refresh();
+    } catch {
+      toast("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <>
+      <div className="stall-ad">
+        <AdCarousel slides={POSTERS} />
+      </div>
+
       <div className="stallhero" style={{ background: stall.accent_color }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <Avatar logoUrl={vendor.logo_url} name={vendor.business_name} size="stall" />
@@ -134,6 +200,13 @@ export function StallScreen({ data }: { data: StallData }) {
               <button
                 type="button"
                 className="btn sm ghost"
+                onClick={() => setEditProduct(product)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="btn sm ghost"
                 onClick={() => {
                   setDealProduct(product);
                   setDiscount(String(product.discount_pct || 0));
@@ -147,6 +220,8 @@ export function StallScreen({ data }: { data: StallData }) {
                 role="switch"
                 aria-checked={product.is_active}
                 aria-label={`Publish ${product.name}`}
+                aria-busy={Boolean(pending[product.id])}
+                disabled={Boolean(pending[product.id])}
                 onClick={() => togglePublished(product.id, !product.is_active)}
               />
             </div>
@@ -161,18 +236,31 @@ export function StallScreen({ data }: { data: StallData }) {
         <div className="pgrid">
           {published.length ? (
             published.map((product) => (
-              <div className="pcard" key={product.id}>
+              <button
+                type="button"
+                className="pcard"
+                key={product.id}
+                onClick={() => setViewProduct(product)}
+                aria-label={`View ${product.name}`}
+              >
                 <Thumb product={product} />
+                {productImages(product).length > 1 ? (
+                  <span className="photo-count">{productImages(product).length} photos</span>
+                ) : null}
                 <b>{product.name}</b>
                 {product.discount_pct ? (
                   <>
                     <span className="tag red">-{product.discount_pct}%</span>
                     <br />
-                    <s>{formatUGX(product.price)}</s>
+                    <s>
+                      <MoneyText amount={product.price} className="inline-money" fit={false} />
+                    </s>
                     <br />
                   </>
                 ) : null}
-                <b style={{ color: stall.accent_color }}>{formatUGX(effectivePrice(product))}</b>
+                <b style={{ color: stall.accent_color }}>
+                  <MoneyText amount={effectivePrice(product)} className="inline-money" fit={false} />
+                </b>
                 <div style={{ fontSize: 10.5, color: "var(--mut)", marginTop: 3 }}>
                   {product.stock > 0
                     ? [colorNames(product.colors).join(" · "), (product.sizes || []).join(" ")]
@@ -185,7 +273,7 @@ export function StallScreen({ data }: { data: StallData }) {
                     {product.description}
                   </div>
                 ) : null}
-              </div>
+              </button>
             ))
           ) : (
             <div className="empty" style={{ gridColumn: "1/3" }}>
@@ -195,23 +283,54 @@ export function StallScreen({ data }: { data: StallData }) {
         </div>
       </div>
 
-      <ProductSheet
-        key={addOpen ? "add-open" : "add-closed"}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        vendorId={vendor.id}
-        busy={busy}
-        title="Add product to stall"
-        defaultPublished
-        onSubmit={async (input) => {
-          setBusy(true);
-          const result = await createProductAction(input);
-          setBusy(false);
-          if (!result.ok) return toast(result.error ?? "Could not save product");
-          setAddOpen(false);
-          toast(input.is_published ? "Added and live on your stall" : "Item registered");
-          router.refresh();
-        }}
+      {addOpen ? (
+        <ProductSheet
+          key="add-open"
+          open
+          onClose={() => setAddOpen(false)}
+          vendorId={vendor.id}
+          busy={busy}
+          title="Add product to stall"
+          categories={categoryOptions}
+          defaultPublished
+          onSubmit={async (input) => {
+            setBusy(true);
+            const result = await createProductAction(input);
+            setBusy(false);
+            if (!result.ok) return toast(result.error ?? "Could not save product");
+            setAddOpen(false);
+            toast(input.is_published ? "Added and live on your stall" : "Item registered");
+            router.refresh();
+          }}
+        />
+      ) : null}
+
+      {editProduct ? (
+        <ProductSheet
+          key={editProduct.id}
+          open
+          onClose={() => setEditProduct(null)}
+          vendorId={vendor.id}
+          busy={busy}
+          product={editProduct}
+          categories={categoryOptions}
+          onSubmit={async (input) => {
+            if (!editProduct) return;
+            setBusy(true);
+            const result = await updateProductAction({ id: editProduct.id, ...input });
+            setBusy(false);
+            if (!result.ok) return toast(result.error ?? "Could not update product");
+            setEditProduct(null);
+            toast("Product updated");
+            router.refresh();
+          }}
+        />
+      ) : null}
+
+      <ProductGallery
+        key={viewProduct?.id ?? "no-product"}
+        product={viewProduct}
+        onClose={() => setViewProduct(null)}
       />
 
       <BottomSheet
@@ -229,8 +348,14 @@ export function StallScreen({ data }: { data: StallData }) {
           value={discount}
           onChange={(event) => setDiscount(event.target.value)}
         />
-        <button className="btn" style={{ marginTop: 14 }} onClick={saveDiscount}>
-          Apply
+        <button
+          type="button"
+          className="btn"
+          style={{ marginTop: 14 }}
+          onClick={saveDiscount}
+          disabled={discountBusy}
+        >
+          {discountBusy ? "Saving…" : "Apply"}
         </button>
       </BottomSheet>
 
@@ -257,7 +382,13 @@ export function StallScreen({ data }: { data: StallData }) {
             />
           ))}
         </div>
-        <button className="btn" style={{ marginTop: 14 }} onClick={saveStall} disabled={busy}>
+        <button
+          type="button"
+          className="btn"
+          style={{ marginTop: 14 }}
+          onClick={saveStall}
+          disabled={busy}
+        >
           {busy ? "Saving…" : "Save and publish"}
         </button>
       </BottomSheet>

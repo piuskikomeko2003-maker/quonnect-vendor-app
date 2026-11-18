@@ -2,14 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordSaleAction, saveReceiptAction } from "@/actions/business";
+import { recordSaleAction, reverseSaleAction, saveReceiptAction } from "@/actions/business";
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { ConfirmSheet } from "@/components/ui/ConfirmSheet";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { MoneyText } from "@/components/ui/MoneyText";
+import { Spinner } from "@/components/ui/Spinner";
+import { SuccessSheet, type SuccessFact } from "@/components/ui/SuccessSheet";
 import { Thumb } from "@/components/ui/Thumb";
 import { useToast } from "@/components/ui/Toast";
 import { PAYMENT_METHODS } from "@/lib/constants";
-import { formatDay, formatUGX, todayKey } from "@/lib/format";
+import { formatDay, formatMoney, todayKey } from "@/lib/format";
+import { parseMoneyInput } from "@/lib/validation";
 import { effectivePrice, productIcon } from "@/lib/product";
+import { coverImageUrl } from "@/lib/product-images";
 import {
   buildReceipt,
   downloadCanvas,
@@ -54,17 +61,61 @@ function toReceiptSale(sale: SaleWithItems): ReceiptSale {
   };
 }
 
+function saleSuccessFacts(sale: ReceiptSale): SuccessFact[] {
+  const units = sale.items.reduce((total, item) => total + Number(item.qty || 0), 0);
+  const facts: SuccessFact[] = [
+    {
+      label: "Amount received",
+      value: <MoneyText amount={sale.total} className="inline-money" fit={false} />,
+      tone: "pos",
+    },
+    {
+      label: "Items sold",
+      value: `${units} item${units === 1 ? "" : "s"} · stock updated`,
+    },
+    { label: "Payment method", value: sale.paymentMethod },
+    {
+      label: "Profit on this sale",
+      value: <MoneyText amount={sale.profit} className="inline-money" fit={false} />,
+    },
+  ];
+
+  if (sale.customerName) {
+    facts.push({ label: "Customer", value: sale.customerName });
+  }
+  if (sale.priceReduction > 0) {
+    facts.push({
+      label: "Below listed price",
+      value: <MoneyText amount={sale.priceReduction} className="inline-money" fit={false} />,
+      tone: "neg",
+    });
+  }
+
+  return facts;
+}
+
 export function SellScreen({ products, recentSales, business }: SellScreenProps) {
   const router = useRouter();
   const toast = useToast();
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<ReceiptSale | null>(null);
+  const [saleWarning, setSaleWarning] = useState("");
+  const [reverseTarget, setReverseTarget] = useState<SaleWithItems | null>(null);
+  const [reverseBusy, setReverseBusy] = useState(false);
+  const [reverseError, setReverseError] = useState("");
+  const [reversalConfirmation, setReversalConfirmation] = useState<{
+    title: string;
+    message: string;
+    facts: SuccessFact[];
+  } | null>(null);
   const [receiptForm, setReceiptForm] = useState<ReceiptSale | null>(null);
   const [preview, setPreview] = useState<{ sale: ReceiptSale; canvas: HTMLCanvasElement; url: string } | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
 
   const lines = Object.entries(cart)
     .map(([id, entry]) => {
@@ -127,9 +178,23 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
   }
 
   async function recordSale() {
-    if (!lines.length) return;
-    if (lines.some((line) => !(Number(line.soldPrice) > 0))) {
-      toast("Enter a selling price");
+    if (!lines.length) {
+      toast("Add at least one item to the sale");
+      return;
+    }
+    const invalidPrice = lines.find((line) => {
+      const price = parseMoneyInput(line.soldPrice);
+      return price === null || price <= 0;
+    });
+    if (invalidPrice) {
+      toast(`Enter a valid selling price for ${invalidPrice.product.name}`);
+      return;
+    }
+    const invalidQuantity = lines.find(
+      (line) => !Number.isInteger(line.qty) || line.qty < 1 || line.qty > line.product.stock,
+    );
+    if (invalidQuantity) {
+      toast(`Check the quantity for ${invalidQuantity.product.name}`);
       return;
     }
     setBusy(true);
@@ -137,8 +202,9 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
       lines.map((line) => ({
         product_id: line.product.id,
         qty: line.qty,
-        sold_price: Number(line.soldPrice),
+        sold_price: parseMoneyInput(line.soldPrice) as number,
       })),
+      { name: customerName, phone: customerPhone },
     );
     setBusy(false);
     if (!result.ok || !result.sale || !result.items) {
@@ -153,8 +219,8 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
       profit: result.sale.profit,
       priceReduction: result.sale.price_reduction,
       paymentMethod: result.sale.payment_method,
-      customerName: "",
-      customerPhone: "",
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
       items: result.items.map((item) => ({
         name: item.name,
         qty: item.qty,
@@ -163,9 +229,72 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
         cost: item.cost,
       })),
     };
+    if (result.warning) setSaleWarning(result.warning);
+    else setSaleWarning("");
     setCart({});
     setAddOpen(false);
+    setCustomerName("");
+    setCustomerPhone("");
     setDone(sale);
+    router.refresh();
+  }
+
+  async function reverseSale() {
+    if (!reverseTarget) return;
+    setReverseBusy(true);
+    const result = await reverseSaleAction(reverseTarget.id);
+    setReverseBusy(false);
+    if (!result.ok || !result.reversal) {
+      setReverseError(result.error ?? "Could not reverse this sale");
+      return;
+    }
+
+    const reversal = result.reversal;
+    setReverseTarget(null);
+    setReverseError("");
+
+    const facts: SuccessFact[] = [
+      { label: "Sale", value: reversal.order_no || "Sale" },
+      {
+        label: "Sale total",
+        value: <MoneyText amount={reversal.total} className="inline-money" fit={false} />,
+      },
+      {
+        label: "Stock restored",
+        value: `${reversal.items_reversed} item${reversal.items_reversed === 1 ? "" : "s"} returned to stock`,
+      },
+      {
+        label: "Amount refunded",
+        value: (
+          <MoneyText amount={reversal.refunded_amount} className="inline-money" fit={false} />
+        ),
+        tone: reversal.refunded_amount > 0 ? "neg" : "muted",
+      },
+      {
+        label: "Refunded from",
+        value: reversal.account_name ?? "No money had been received",
+      },
+    ];
+
+    if (reversal.account_balance_after !== null) {
+      facts.push({
+        label: "Updated account balance",
+        value: (
+          <MoneyText
+            amount={reversal.account_balance_after}
+            className="inline-money"
+            fit={false}
+          />
+        ),
+      });
+    }
+
+    setReversalConfirmation({
+      title: "Sale reversed",
+      message:
+        "Stock was returned and any money received was refunded. The original sale and its reversal can be seen under Business accounts.",
+      facts,
+    });
     router.refresh();
   }
 
@@ -201,6 +330,17 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
 
   return (
     <>
+      {!products.length ? (
+        <div className="card">
+          <EmptyState
+            icon="basket"
+            title="No products to sell yet"
+            description="Register your first item or restock existing stock before recording a sale."
+            actionLabel="Go to my stock"
+            actionHref="/stock"
+          />
+        </div>
+      ) : null}
       <div className="chips" role="list" aria-label="Products">
         {products.map((product) => (
           <button
@@ -210,18 +350,50 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
             onClick={() => addToCart(product)}
             role="listitem"
           >
-            {product.photo_url ? (
+            {coverImageUrl(product) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.photo_url} alt="" />
+              <img src={coverImageUrl(product) ?? ""} alt="" />
             ) : (
               <Icon name={productIcon(product)} size={18} />
             )}{" "}
             {product.name}
             <small>
-              {formatUGX(effectivePrice(product))} · {product.stock} in stock
+              {formatMoney(effectivePrice(product))} · {product.stock} in stock
             </small>
           </button>
         ))}
+      </div>
+
+      <div className="card">
+        <h3>
+          Customer <span>Optional</span>
+        </h3>
+        <div className="customer-fields">
+          <div>
+            <label htmlFor="sale-customer-name">Customer name</label>
+            <input
+              id="sale-customer-name"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              placeholder="e.g. Sarah"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="sale-customer-phone">Contact / WhatsApp</label>
+            <input
+              id="sale-customer-phone"
+              type="tel"
+              value={customerPhone}
+              onChange={(event) => setCustomerPhone(event.target.value)}
+              placeholder="+256 7XX XXX XXX"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        <small className="customer-hint">
+          Add a customer to link this sale to their history.
+        </small>
       </div>
 
       <div className="card">
@@ -237,7 +409,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
               <div className="row" style={{ alignItems: "flex-start" }} key={line.product.id}>
                 <div className="grow">
                   <b>{line.product.name}</b>
-                  <small style={{ display: "block" }}>Listed {formatUGX(listed)}</small>
+                  <small style={{ display: "block" }}>Listed {formatMoney(listed)}</small>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                     <span style={{ fontSize: 11.5, color: "var(--mut)" }}>Sold at</span>
                     <input
@@ -251,14 +423,14 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
                   </div>
                   <small style={{ display: "block", marginTop: 4 }}>
                     {difference < 0 ? (
-                      <span className="neg">{formatUGX(-difference)} below listed price</span>
+                      <span className="neg">{formatMoney(-difference)} below listed price</span>
                     ) : difference > 0 ? (
-                      <span className="pos">{formatUGX(difference)} above listed price</span>
+                      <span className="pos">{formatMoney(difference)} above listed price</span>
                     ) : null}
                     {sold > 0 && sold < line.product.cost ? (
                       <span style={{ color: "var(--amber)" }}>
                         {" "}
-                        · below your cost ({formatUGX(line.product.cost)})
+                        · below your cost ({formatMoney(line.product.cost)})
                       </span>
                     ) : null}
                   </small>
@@ -283,14 +455,22 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
             <div className="grow">
               <b>Total</b>
             </div>
-            <b style={{ fontSize: 17 }}>{formatUGX(total)}</b>
+            <b style={{ fontSize: 17, minWidth: 0 }}>
+              <MoneyText amount={total} className="inline-money" fit={false} />
+            </b>
           </div>
         ) : null}
       </div>
 
       {lines.length ? (
-        <button className="btn" onClick={recordSale} disabled={busy}>
-          {busy ? "Recording…" : `Record sale · ${formatUGX(total)}`}
+        <button className="btn" onClick={recordSale} disabled={busy} aria-busy={busy ? "true" : undefined}>
+          {busy ? (
+            <>
+              <Spinner /> Recording…
+            </>
+          ) : (
+            `Record sale · ${formatMoney(total)}`
+          )}
         </button>
       ) : null}
 
@@ -302,7 +482,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
             return (
               <div className="row" key={sale.id}>
                 <div className="grow">
-                  <b>{formatUGX(sale.total)}</b>
+                  <b>{formatMoney(sale.total)}</b>
                   <small>{sale.sale_date}</small>
                   {receipt.items.map((item) => (
                     <small style={{ display: "block" }} key={`${sale.id}-${item.name}`}>
@@ -310,9 +490,9 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
                       {item.sold !== item.listed ? (
                         <>
                           {" "}
-                          @ {formatUGX(item.sold)}{" "}
+                          @ {formatMoney(item.sold)}{" "}
                           <span className={item.sold < item.listed ? "neg" : "pos"}>
-                            (listed {formatUGX(item.listed)})
+                            (listed {formatMoney(item.listed)})
                           </span>
                         </>
                       ) : null}
@@ -320,7 +500,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
                   ))}
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <span className="tag">+{formatUGX(sale.profit)}</span>
+                  <span className="tag">+{formatMoney(sale.profit)}</span>
                   <br />
                   <button
                     type="button"
@@ -330,12 +510,27 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
                   >
                     Receipt
                   </button>
+                  <button
+                    type="button"
+                    className="link danger"
+                    style={{ display: "block", marginLeft: "auto", marginTop: 6, fontSize: 11.5 }}
+                    onClick={() => {
+                      setReverseError("");
+                      setReverseTarget(sale);
+                    }}
+                  >
+                    Void sale
+                  </button>
                 </div>
               </div>
             );
           })
         ) : (
-          <div className="empty">No sales yet</div>
+          <EmptyState
+            icon="receipt"
+            title="No sales recorded yet"
+            description="Tap a product above or use the + button to build your first sale. Stock and money update automatically."
+          />
         )}
       </div>
 
@@ -378,7 +573,7 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
                   <div className="grow">
                     <b>{product.name}</b>
                     <small style={{ display: "block" }}>
-                      {formatUGX(effectivePrice(product))} · {product.stock} in stock
+                      {formatMoney(effectivePrice(product))} · {product.stock} in stock
                       {inCart ? ` · ${inCart} in this sale` : ""}
                     </small>
                   </div>
@@ -405,47 +600,50 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
               {itemCount} {itemCount === 1 ? "item" : "items"}
             </b>
           </div>
-          <b style={{ fontSize: 17 }}>{formatUGX(total)}</b>
+          <b style={{ fontSize: 17, minWidth: 0 }}>
+            <MoneyText amount={total} className="inline-money" fit={false} />
+          </b>
         </div>
-        <button className="btn" disabled={!lines.length || busy} onClick={recordSale}>
-          {busy
-            ? "Recording…"
-            : lines.length
-              ? `Record sale · ${formatUGX(total)}`
-              : "Add an item to start"}
+        <button
+          className="btn"
+          disabled={!lines.length || busy}
+          aria-busy={busy ? "true" : undefined}
+          onClick={recordSale}
+        >
+          {busy ? (
+            <>
+              <Spinner /> Recording…
+            </>
+          ) : lines.length ? (
+            `Record sale · ${formatMoney(total)}`
+          ) : (
+            "Add an item to start"
+          )}
         </button>
       </BottomSheet>
 
-      <BottomSheet open={Boolean(done)} onClose={() => setDone(null)}>
-        {done ? (
-          <div style={{ textAlign: "center" }}>
-            <div className="bigav" style={{ width: 64, height: 64 }}>
-              <Icon name="check" size={34} />
-            </div>
-            <h2 style={{ marginTop: 10 }}>Sale recorded</h2>
-            <div style={{ fontSize: 26, fontWeight: 800, margin: "4px 0" }}>{formatUGX(done.total)}</div>
-            {done.priceReduction > 0 ? (
-              <small style={{ color: "var(--amber)" }}>
-                {formatUGX(done.priceReduction)} below listed price noted
-              </small>
-            ) : (
-              <small style={{ color: "var(--mut)" }}>Stock updated</small>
-            )}
-            <button className="btn" style={{ marginTop: 18 }} onClick={() => openReceipt(done)}>
+      <SuccessSheet
+        open={Boolean(done)}
+        onClose={() => setDone(null)}
+        title="Sale recorded"
+        message="The sale is saved and stock quantities have been updated."
+        facts={done ? saleSuccessFacts(done) : []}
+        warning={saleWarning || undefined}
+        closeLabel="Not now"
+        actions={
+          done ? (
+            <button className="btn" onClick={() => openReceipt(done)}>
               <Icon name="receipt" size={16} /> Generate receipt
             </button>
-            <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => setDone(null)}>
-              Not now
-            </button>
-          </div>
-        ) : null}
-      </BottomSheet>
+          ) : null
+        }
+      />
 
       <BottomSheet
         open={Boolean(receiptForm)}
         onClose={() => setReceiptForm(null)}
         title={receiptForm ? `Receipt ${receiptNumber(receiptForm.id)}` : "Receipt"}
-        subtitle={receiptForm ? `${formatUGX(receiptForm.total)} · ${formatDay(receiptForm.date)}` : undefined}
+        subtitle={receiptForm ? `${formatMoney(receiptForm.total)} · ${formatDay(receiptForm.date)}` : undefined}
       >
         {receiptForm ? (
           <>
@@ -536,6 +734,53 @@ export function SellScreen({ products, recentSales, business }: SellScreenProps)
           </>
         ) : null}
       </BottomSheet>
+
+      <ConfirmSheet
+        open={Boolean(reverseTarget)}
+        onClose={() => {
+          if (!reverseBusy) setReverseTarget(null);
+        }}
+        title="Void this sale?"
+        description="All items in this sale will be returned to stock and any money received will be refunded to the account that received it. The sale and its reversal stay in your history."
+        confirmLabel="Void this sale"
+        busy={reverseBusy}
+        error={reverseError}
+        onConfirm={reverseSale}
+      >
+        {reverseTarget ? (
+          <dl className="success-facts">
+            <div>
+              <dt>Sale</dt>
+              <dd>{reverseTarget.order_no}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>
+                <MoneyText amount={reverseTarget.total} className="inline-money" fit={false} />
+              </dd>
+            </div>
+            <div>
+              <dt>Items</dt>
+              <dd>
+                {reverseTarget.items.reduce((total, item) => total + Number(item.quantity || 0), 0)}{" "}
+                units
+              </dd>
+            </div>
+            <div>
+              <dt>Customer</dt>
+              <dd>{reverseTarget.customer_name || "Walk-in customer"}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </ConfirmSheet>
+
+      <SuccessSheet
+        open={Boolean(reversalConfirmation)}
+        onClose={() => setReversalConfirmation(null)}
+        title={reversalConfirmation?.title ?? "Sale reversed"}
+        message={reversalConfirmation?.message}
+        facts={reversalConfirmation?.facts ?? []}
+      />
     </>
   );
 }

@@ -443,7 +443,7 @@ function ChangePasswordSheet({
       <div className="err" role="alert">
         {error}
       </div>
-      <button className="btn" onClick={save} disabled={busy}>
+      <button type="button" className="btn" onClick={save} disabled={busy}>
         {busy ? "Updating…" : "Update password"}
       </button>
     </BottomSheet>

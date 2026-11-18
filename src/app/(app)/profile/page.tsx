@@ -1,9 +1,18 @@
+"use client";
+
 import { ProfileScreen } from "@/components/screens/ProfileScreen";
-import { requireVendor } from "@/lib/auth";
+import { useVendor } from "@/components/app/VendorProvider";
+import { usePageTitle } from "@/lib/query";
 
-export const metadata = { title: "Profile · Quonnect Vendor" };
+export default function ProfilePage() {
+  usePageTitle("Profile · Quonnect Vendor");
+  const { vendor, stall } = useVendor();
 
-export default async function ProfilePage() {
-  const { vendor, stall } = await requireVendor();
-  return <ProfileScreen data={{ vendor, stall }} />;
+  return (
+    <>
+      <h1 className="page-title">My profile</h1>
+      <p className="page-subtitle">Your business details</p>
+      <ProfileScreen data={{ vendor, stall }} />
+    </>
+  );
 }

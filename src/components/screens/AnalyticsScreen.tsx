@@ -13,16 +13,17 @@ import {
   type GroupBy,
   type Metric,
 } from "@/lib/constants";
-import { formatUGX, monthShort, shortMoney } from "@/lib/format";
+import { MoneyText } from "@/components/ui/MoneyText";
+import { formatMoney, monthShort } from "@/lib/format";
 import type { AnalyticsData } from "@/lib/types";
 
 const COLORS = {
-  sales: "#0F8A4D",
-  expenses: "#D97706",
-  profit: "#2563EB",
-  cost: "#64748B",
-  expected: "#D97706",
-  actual: "#0F8A4D",
+  sales: "#1D4ED8",
+  expenses: "#6B7F7A",
+  profit: "#60A5FA",
+  cost: "#9AA59F",
+  expected: "#60A5FA",
+  actual: "#1D4ED8",
 };
 
 const METRIC_NAMES: Record<Metric, string> = {
@@ -39,6 +40,8 @@ interface AnalyticsScreenProps {
   months: number;
   cmp: "item" | "time";
   basePath?: string;
+  /** Extra query values to keep when a control changes, e.g. the Business tab. */
+  preserveParams?: Record<string, string>;
 }
 
 function Legend({ items }: { items: [string, string][] }) {
@@ -59,7 +62,7 @@ function changePill(value: number | null) {
   return (
     <small className={value >= 0 ? "pos" : "neg"} style={{ display: "block", marginTop: 2 }}>
       {value >= 0 ? "▲ " : "▼ "}
-      {Math.abs(Math.round(value))}% vs before
+      {Math.abs(value) > 999 ? "999%+" : `${Math.abs(Math.round(value))}%`} vs before
     </small>
   );
 }
@@ -72,6 +75,7 @@ export function AnalyticsScreen({
   months,
   cmp,
   basePath = "/analytics",
+  preserveParams,
 }: AnalyticsScreenProps) {
   const router = useRouter();
 
@@ -82,6 +86,7 @@ export function AnalyticsScreen({
       metrics: metrics.join(","),
       months: String(months),
       cmp,
+      ...preserveParams,
       ...patch,
     });
     router.push(`${basePath}?${params.toString()}`);
@@ -168,17 +173,20 @@ export function AnalyticsScreen({
         <div className="opts">
           {(Object.keys(METRIC_NAMES) as Metric[]).map((metric) => {
             const on = metrics.includes(metric);
+            const locked = on && metrics.length === 1;
             return (
               <button
                 type="button"
                 key={metric}
-                className="opt"
+                className={`opt${locked ? " is-locked" : ""}`}
                 style={
                   on
                     ? { background: METRIC_COLORS[metric], borderColor: METRIC_COLORS[metric], color: "#fff" }
                     : undefined
                 }
                 aria-pressed={on}
+                aria-disabled={locked}
+                title={locked ? "Keep at least one metric on the graph" : undefined}
                 onClick={() => toggleMetric(metric)}
               >
                 {on ? null : (
@@ -193,17 +201,17 @@ export function AnalyticsScreen({
         <div className="grid3" style={{ margin: "14px 0 8px" }}>
           <div className="stat">
             <small>Sales</small>
-            <b>UGX {shortMoney(data.totals.sales)}</b>
+            <b><MoneyText amount={data.totals.sales} className="inline-money" /></b>
             {changePill(growth)}
           </div>
           <div className="stat">
             <small>Expenses</small>
-            <b>UGX {shortMoney(data.totals.expenses)}</b>
+            <b><MoneyText amount={data.totals.expenses} className="inline-money" /></b>
           </div>
           <div className="stat">
             <small>Profit</small>
             <b className={data.totals.profit >= 0 ? "pos" : "neg"}>
-              UGX {shortMoney(data.totals.profit)}
+              <MoneyText amount={data.totals.profit} className="inline-money" />
             </b>
           </div>
         </div>
@@ -260,15 +268,15 @@ export function AnalyticsScreen({
           <div className="stat">
             <small>Best month</small>
             <b>{monthlyLabels[bestIndex] ?? "—"}</b>
-            <small>UGX {shortMoney(salesValues[bestIndex] ?? 0)}</small>
+            <small><MoneyText amount={salesValues[bestIndex] ?? 0} className="inline-money" /></small>
           </div>
           <div className="stat">
             <small>Monthly average</small>
-            <b>UGX {shortMoney(average)}</b>
+            <b><MoneyText amount={average} className="inline-money" /></b>
           </div>
           <div className="stat">
             <small>Last full month</small>
-            <b>UGX {shortMoney(lastFull)}</b>
+            <b><MoneyText amount={lastFull} className="inline-money" /></b>
             {changePill(lastFullGrowth)}
           </div>
         </div>
@@ -306,7 +314,7 @@ export function AnalyticsScreen({
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 8 }}>
                 <b>{row.category}</b>
                 <span>
-                  {formatUGX(row.total)} · {Math.round((Number(row.total) / categoryTotal) * 100)}%
+                  {formatMoney(row.total)} · {Math.round((Number(row.total) / categoryTotal) * 100)}%
                 </span>
               </div>
               <div className="bar">
@@ -345,15 +353,17 @@ export function AnalyticsScreen({
         <div className="grid3" style={{ marginBottom: 6 }}>
           <div className="stat">
             <small>Expected revenue</small>
-            <b>UGX {shortMoney(expectedTotal)}</b>
+            <b><MoneyText amount={expectedTotal} className="inline-money" /></b>
           </div>
           <div className="stat">
             <small>Actual revenue</small>
-            <b>UGX {shortMoney(actualTotal)}</b>
+            <b><MoneyText amount={actualTotal} className="inline-money" /></b>
           </div>
           <div className="stat">
             <small>Price cuts given</small>
-            <b className={cuts > 0 ? "neg" : ""}>UGX {shortMoney(cuts)}</b>
+            <b className={cuts > 0 ? "neg" : ""}>
+              <MoneyText amount={cuts} className="inline-money" />
+            </b>
           </div>
         </div>
         <small style={{ display: "block", color: "var(--mut)", fontSize: 11.5, marginBottom: 8 }}>
@@ -434,8 +444,8 @@ export function AnalyticsScreen({
                     <div className="grow">
                       <b>{item.name}</b>
                       <small>
-                        Cost {formatUGX(item.cost)} · Expected {formatUGX(item.expected)} ·{" "}
-                        {item.sold ? `Actual ${formatUGX(item.actual)}` : "Not sold yet"}
+                        Cost {formatMoney(item.cost)} · Expected {formatMoney(item.expected)} ·{" "}
+                        {item.sold ? `Actual ${formatMoney(item.actual)}` : "Not sold yet"}
                       </small>
                     </div>
                     <span className={`tag ${margin < 0 ? "red" : ""}`}>

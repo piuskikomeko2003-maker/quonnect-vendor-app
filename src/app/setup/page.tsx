@@ -1,15 +1,52 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AuthHero } from "@/components/auth/AuthHero";
 import { SignOutButton } from "@/components/auth/SignOutButton";
-import { getSetupStatus } from "@/lib/setup-status";
+import { PageSkeleton } from "@/components/ui/PageSkeleton";
+import { getSetupStatus, type SetupStatus } from "@/lib/setup-status";
+import { usePageTitle } from "@/lib/query";
 
-export const metadata = { title: "Finish setup · Quonnect Vendor" };
+export default function SetupPage() {
+  usePageTitle("Finish setup · Quonnect Vendor");
+  const router = useRouter();
+  const [status, setStatus] = useState<SetupStatus | null>(null);
+  const [checked, setChecked] = useState(false);
 
-export default async function SetupPage() {
-  const status = await getSetupStatus();
-  if (!status) redirect("/login");
-  if (status.repaired) redirect("/home");
+  useEffect(() => {
+    let active = true;
+    getSetupStatus()
+      .then((next) => {
+        if (!active) return;
+        if (!next) {
+          router.replace("/login");
+          return;
+        }
+        if (next.repaired) {
+          router.replace("/home");
+          return;
+        }
+        setStatus(next);
+        setChecked(true);
+      })
+      .catch((cause) => {
+        console.error("[setup] check failed:", cause);
+        if (active) setChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  if (!checked || !status) {
+    return (
+      <div className="auth-shell">
+        <PageSkeleton rows={3} />
+      </div>
+    );
+  }
 
   return (
     <div className="auth-shell">

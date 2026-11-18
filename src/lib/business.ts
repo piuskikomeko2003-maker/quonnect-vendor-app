@@ -1,4 +1,5 @@
 import type { ReceiptBusiness } from "@/lib/receipt";
+import { normalizeAccent } from "@/lib/constants";
 import type { Stall, Vendor } from "@/types/app-db";
 
 export function receiptBusiness(vendor: Vendor, stall: Stall): ReceiptBusiness {
@@ -10,7 +11,7 @@ export function receiptBusiness(vendor: Vendor, stall: Stall): ReceiptBusiness {
     location: vendor.region ?? "",
     phone: vendor.phone ?? "",
     logoUrl: vendor.logo_url,
-    accent: stall.accent_color,
+    accent: normalizeAccent(stall.accent_color),
     instagram: vendor.instagram ?? "",
     facebook: vendor.facebook ?? "",
     tiktok: vendor.tiktok ?? "",

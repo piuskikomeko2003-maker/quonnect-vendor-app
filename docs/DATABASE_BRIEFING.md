@@ -10,6 +10,12 @@ Supabase Postgres is the source of truth. Every business table is scoped by `ven
 | `20260928_01_core_and_modular_schema.sql` | Existing modular schema (sales, customers, finance extensions, suppliers, etc.) |
 | `20260928_02_report_stock_rpc.sql` | Existing stock report RPC |
 | `20261021_01_ui_rebuild.sql` | UI rebuild schema, RLS, storage and aggregate RPCs |
+| `20261102_01_dashboard_accounts.sql` | Business accounts, append-only account movements and the dashboard RPC |
+| `20261102_02_business_account_management.sql` | Manual account create/edit, transfers, safe deactivation and the accounts overview RPC |
+| `20261102_03_stock_purchases.sql` | Account-linked stock purchases, supplier payables and purchase idempotency |
+| `20261102_04_money_management.sql` | Account selection and ledger movements for expenses and other income |
+| `20261102_05_usability_and_corrections.sql` | Reversible sales and stock purchases |
+| `20261102_06_settlements.sql` | Customer collections, supplier payments, allocations, settlement history and idempotency |
 
 The baseline is deliberately idempotent because the original base tables were created through the Supabase dashboard/MCP and were missing from migration history.
 
@@ -83,9 +89,26 @@ No duplicate `expenses` / `other_income` tables were added. This preserves exist
 
 `vendor_id`, `category`, `monthly_limit`, unique `(vendor_id, category)`. Budget progress joins this month's expense rows whose category has a budget.
 
+### settlement_payments and settlement_allocations
+
+`settlement_payments` is the header for one settlement: `settlement_type` (`customer_collection`
+or `supplier_payment`), customer/supplier party snapshot, account, amount, reference, paid date and
+a unique `(vendor_id, idempotency_key)` for retry safety.
+
+`settlement_allocations` points each payment at one or more `sales` or `purchases`, with the amount
+applied to that item. A check constraint prevents an allocation from pointing at both a sale and a
+purchase, and unique indexes prevent the same item being paid twice inside one settlement.
+
+The account ledger receives exactly one movement per settlement:
+`source_type = 'settlement_payment'`, `source_id = settlement_payments.id`, positive for customer
+collections and negative for supplier payments. The sale balance trigger skips sales that have
+settlement allocations so money is never counted twice.
+
 ### Outer tables left in place
 
-`customers`, `payments`, `bookings`, `suppliers`, `purchases`, `purchase_items`, `purchase_orders`, `quotations`, `activity_log`, `shop_members`, `stores`, `stock_levels`, `stock_transfers`, `product_images`, `shop_suggestions` remain from the previous app. They are not used by the rebuilt UI and stay protected by their existing RLS. No data is dropped.
+`payments`, `bookings`, `suppliers`, `purchases`, `purchase_items`, `purchase_orders`, `quotations`, `activity_log`, `shop_members`, `stores`, `stock_levels`, `stock_transfers`, `product_images`, `shop_suggestions` remain from the previous app. They are not used by the current UI and stay protected by their existing RLS. No data is dropped.
+
+`customers` is now used by the Customers module and is linked from sales when a customer name or phone is supplied. `finance_categories` and `product_categories` store per-vendor custom categories. `vendors.month_start_day` controls the Home profit month, and `vendors.features_enabled` drives feature visibility. Later migrations add ordered `photo_urls` on products.
 
 ## RLS
 
@@ -124,6 +147,40 @@ Returns `{sale_id, order_no, total, profit, price_reduction}`.
 ### `restock_product(p_vendor_id, p_product_id, p_qty, p_new_cost, p_create_expense)`
 
 Locks the product, increments stock, optionally updates cost, writes a `restock` movement, and optionally inserts a `Stock purchase` expense for `qty × cost`.
+
+### Business account RPCs
+
+| Function | Purpose |
+| --- | --- |
+| `create_financial_account(vendor, name, kind, opening_balance, description, color, icon)` | Creates an account. Name is unique per vendor; opening balance is the only manually supplied balance. |
+| `update_financial_account(vendor, account, name, kind, description, color, icon)` | Edits display details only. Opening balance is immutable. |
+| `transfer_between_accounts(vendor, from, to, amount, notes)` | Writes two linked `kind = transfer` movements. Rejects inactive accounts and insufficient funds. |
+| `set_financial_account_active(vendor, account, active)` | Deactivation is blocked while the derived balance is non-zero and keeps at least one active cash/bank/mobile account. |
+| `vendor_accounts_overview(vendor, limit)` | Returns all accounts with derived balances plus recent account movements. |
+
+### Stock purchase RPCs
+
+| Function | Purpose |
+| --- | --- |
+| `record_stock_purchase(vendor, items, account, amount_paid, supplier_name, purchase_date, notes, idempotency_key)` | One transaction: creates the purchase and line items, increases stock, writes `restock` movements, records the supplier payable, and writes one account movement for the amount actually paid. |
+| `vendor_purchases_overview(vendor, limit)` | Returns recent purchases with items plus supplier payables grouped by supplier name. |
+
+`purchases` now also stores `supplier_name`, `account_id`, `due_amount` and `idempotency_key`.
+A unique `(vendor_id, idempotency_key)` index makes a retried purchase return the original row
+without increasing stock or reducing the account twice.
+
+### Settlement RPCs
+
+| Function | Purpose |
+| --- | --- |
+| `record_customer_payment(vendor, customer, customer_name, allocations, method, account, reference, paid_on, idempotency_key)` | Locks and validates each outstanding sale, records one payment header, writes one allocation per sale, updates paid/due/status, increases the receiving account once and returns the customer's outstanding balance. |
+| `record_supplier_payment(vendor, supplier_name, allocations, account, reference, paid_on, idempotency_key)` | Same for purchases: validates supplier ownership and outstanding amounts, updates paid/due, reduces the paying account once, and never writes another stock purchase expense. |
+| `vendor_settlements_overview(vendor, history_limit)` | Returns customer collections, outstanding customer sales, supplier payables, outstanding purchases and settlement history. |
+
+Both write RPCs use `(vendor_id, idempotency_key)` uniqueness plus a per-payment allocation
+uniqueness rule, so a retried submit returns `{duplicate: true}` instead of moving money twice.
+The account balance and Available Business Funds are derived from the single append-only ledger
+movement per settlement.
 
 ### Aggregates
 

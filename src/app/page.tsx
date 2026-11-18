@@ -1,11 +1,30 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+"use client";
 
-export default async function RootPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { PageSkeleton } from "@/components/ui/PageSkeleton";
+import { getSessionOnce } from "@/lib/auth-session";
 
-  redirect(user ? "/home" : "/login");
+export default function RootPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    let active = true;
+    getSessionOnce()
+      .then((session) => {
+        if (active) router.replace(session ? "/home" : "/login");
+      })
+      .catch(() => {
+        if (active) router.replace("/login");
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  return (
+    <div className="auth-shell">
+      <PageSkeleton rows={3} />
+    </div>
+  );
 }

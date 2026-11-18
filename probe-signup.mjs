@@ -1,0 +1,11 @@
+import { createClient } from '@supabase/supabase-js';
+import { config } from 'dotenv';
+config({ path: '.env.local' });
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const client = createClient(url, anon, { auth: { persistSession: false } });
+const email = `qv-debug-${Date.now()}@example.com`;
+const password = 'Test1234!';
+const { data, error } = await client.auth.signUp({ email, password, options: { data: { owner_name:'Debug User', business_name:'Debug Stall', category:'Fashion & clothing', region:'Kampala', phone:'+256700000000' } } });
+console.log('error', error?.message ?? null);
+console.log('hasSession', Boolean(data?.session), 'user', data?.user?.id ?? null, 'email', email);

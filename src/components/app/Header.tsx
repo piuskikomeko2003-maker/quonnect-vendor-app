@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
-import { firstName } from "@/lib/format";
+import { Icon } from "@/components/ui/Icon";
 
 interface HeaderProps {
   ownerName: string | null;
@@ -11,41 +12,58 @@ interface HeaderProps {
   logoUrl: string | null;
 }
 
-const TITLES: Record<string, [string, string]> = {
-  "/home": ["", "Here is how your business is doing"],
-  "/sell": ["Record a sale", "Tap products to add to the cart"],
-  "/stock": ["My stock", "Register and monitor your items"],
-  "/money": ["Money", "Expenses, income and budgets"],
-  "/analytics": ["Analytics", "See how your business is growing"],
-  "/stall": ["Online stall", "Live on Quonnect Online Market"],
-  "/profile": ["My profile", "Your business details"],
-};
+function greetingForNow() {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: "Africa/Kampala",
+    }).format(new Date()),
+  );
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 export function Header({ ownerName, businessName, logoUrl }: HeaderProps) {
   const pathname = usePathname();
   const isPreview = pathname.startsWith("/preview/");
-  const path = isPreview ? pathname.slice("/preview".length) : pathname;
-  const entry = TITLES[path] ?? TITLES["/home"];
-  const title = path === "/home" ? `Hello, ${firstName(ownerName)}` : entry[0];
+  const [greeting, setGreeting] = useState("Welcome back");
+
+  useEffect(() => {
+    const update = () => setGreeting(greetingForNow());
+    update();
+    const timer = window.setInterval(update, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const profileHref = isPreview ? "/preview/profile" : "/profile";
+  const notificationsHref = isPreview ? "/preview/profile" : "/notifications";
+  const settingsHref = isPreview ? "/preview/profile" : "/settings";
+  const displayName = businessName || ownerName || "Your business";
 
   return (
     <header className="app-header">
       <div className="top">
-        <div>
-          <h1>{title}</h1>
-          <p>{entry[1]}</p>
-        </div>
-        <div className="header-actions">
-          <div className="badge" title="Your data is up to date">
-            <span className="dot" />
-            <span>Synced</span>
-          </div>
+        <Link href={profileHref} className="hdr-profile" aria-label="Open profile">
+          <Avatar logoUrl={logoUrl} name={displayName} size="header" />
+          <span className="hdr-greeting">
+            <span className="hdr-hello">{greeting}!</span>
+            <strong className="hdr-name">{displayName}</strong>
+          </span>
+        </Link>
+
+        <div className="hdr-actions">
           <Link
-            href={isPreview ? "/preview/profile" : "/profile"}
-            aria-label="Open profile"
-            style={{ display: "flex" }}
+            href={notificationsHref}
+            className="hdr-icon-btn"
+            aria-label="Open notifications, unread"
           >
-            <Avatar logoUrl={logoUrl} name={businessName} size="header" />
+            <Icon name="bell" size={21} />
+            <span className="hdr-unread" aria-hidden="true" />
+          </Link>
+          <Link href={settingsHref} className="hdr-icon-btn" aria-label="Open settings">
+            <Icon name="gear" size={21} />
           </Link>
         </div>
       </div>

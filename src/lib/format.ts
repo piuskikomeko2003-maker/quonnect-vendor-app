@@ -1,9 +1,49 @@
 const BUSINESS_TIME_ZONE = "Africa/Kampala";
 
+export interface FormatMoneyOptions {
+  /** Short form for tight spaces: 270000 -> "270K", 1250000 -> "1.25M". */
+  compact?: boolean;
+  /** Include the "UGX " prefix on the full format. Defaults to true. */
+  currency?: boolean;
+}
+
+function trimDecimals(value: number): string {
+  return value.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d)0$/, "$1");
+}
+
+/**
+ * Single source of truth for money display.
+ *
+ * Full (default): `UGX 270,000`.
+ * Compact: `270K`, `1.25M`, `2.5B` (never carries the currency prefix).
+ */
+export function formatMoney(
+  value: number | string | null | undefined,
+  { compact = false, currency = true }: FormatMoneyOptions = {},
+): string {
+  const raw = typeof value === "string" ? Number.parseFloat(value) : value ?? 0;
+  const amount = Number.isFinite(raw) ? Number(raw) : 0;
+  const sign = amount < 0 ? "-" : "";
+  const abs = Math.abs(amount);
+
+  if (compact) {
+    const units: [number, string][] = [
+      [1_000_000_000, "B"],
+      [1_000_000, "M"],
+      [1_000, "K"],
+    ];
+    for (const [size, suffix] of units) {
+      if (abs >= size) return `${sign}${trimDecimals(abs / size)}${suffix}`;
+    }
+    return `${sign}${Math.round(abs).toLocaleString("en-US")}`;
+  }
+
+  const rounded = Math.round(amount);
+  return `${currency ? "UGX " : ""}${rounded.toLocaleString("en-US")}`;
+}
+
 export function formatUGX(value: number | string | null | undefined): string {
-  const amount = typeof value === "string" ? Number.parseFloat(value) : value ?? 0;
-  const safe = Number.isFinite(amount) ? Math.round(amount) : 0;
-  return `UGX ${safe.toLocaleString("en-US")}`;
+  return formatMoney(value);
 }
 
 export function formatNumber(value: number): string {
@@ -68,6 +108,13 @@ export function todayKey(): string {
 
 export function currentMonthKey(): string {
   return todayKey().slice(0, 7);
+}
+
+/** Month key that contains `day` when a business month starts on `startDay`. */
+export function businessMonthKey(day: string, startDay: number): string {
+  const date = parseDateKey(day);
+  if (startDay <= 1 || date.getUTCDate() >= startDay) return day.slice(0, 7);
+  return dateKey(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 1, 1))).slice(0, 7);
 }
 
 export function parseDateKey(key: string): Date {

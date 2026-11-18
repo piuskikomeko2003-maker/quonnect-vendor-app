@@ -98,7 +98,7 @@ export async function ensureVendorProfile(
         vendor_id: vendor.id,
         name: profileFields.business_name,
         tagline: profileFields.motto ?? "",
-        accent_color: "#0F8A4D",
+        accent_color: "#1D4ED8",
       })
       .select("*")
       .single();

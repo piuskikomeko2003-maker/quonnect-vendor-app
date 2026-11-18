@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { formatUGX, shortMoney } from "@/lib/format";
+import { MoneyText } from "@/components/ui/MoneyText";
+import { shortMoney } from "@/lib/format";
 import { niceMax } from "@/lib/chart";
 import type { ChartSeries } from "@/components/charts/LineChart";
 
@@ -104,7 +105,10 @@ export function BarChart({
         {series.map((entry) => (
           <span key={entry.name}>
             <i className="dotc" style={{ background: entry.color }} />
-            {entry.name} <b>{formatUGX(entry.vals[current] ?? 0)}</b>
+            {entry.name}{" "}
+            <b>
+              <MoneyText amount={entry.vals[current] ?? 0} className="inline-money" fit={false} />
+            </b>
           </span>
         ))}
       </div>

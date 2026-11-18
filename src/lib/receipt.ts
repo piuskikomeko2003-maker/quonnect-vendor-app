@@ -65,7 +65,7 @@ export async function buildReceipt(
   sale: ReceiptSale,
   business: ReceiptBusiness,
 ): Promise<HTMLCanvasElement> {
-  const color = business.accent || "#0F8A4D";
+  const color = business.accent || "#1D4ED8";
   const width = 720;
   const pad = 44;
   const font = 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
@@ -229,7 +229,7 @@ export async function buildReceipt(
       y += 30;
       text(`Special price (was ${formatUGX(item.listed)})`, pad, y, {
         size: 19,
-        color: "#16A34A",
+        color,
       });
     }
     y += 14;
@@ -242,10 +242,10 @@ export async function buildReceipt(
     text("Subtotal", pad, y, { size: 22, color: "#6B7F7A" });
     text(formatUGX(sale.total + reduction), width - pad, y, { size: 22, align: "right" });
     y += 40;
-    text("You saved", pad, y, { size: 22, color: "#16A34A" });
+    text("You saved", pad, y, { size: 22, color });
     text(`− ${formatUGX(reduction)}`, width - pad, y, {
       size: 22,
-      color: "#16A34A",
+      color,
       align: "right",
     });
   }

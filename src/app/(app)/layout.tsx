@@ -1,10 +1,12 @@
+"use client";
+
 import type { CSSProperties } from "react";
 import { Header } from "@/components/app/Header";
 import { TabBar } from "@/components/app/TabBar";
-import { requireVendor } from "@/lib/auth";
+import { VendorProvider, useVendor } from "@/components/app/VendorProvider";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { vendor, stall } = await requireVendor();
+function AppShell({ children }: { children: React.ReactNode }) {
+  const { vendor, stall } = useVendor();
 
   return (
     <div className="app" style={{ "--accent": stall.accent_color } as CSSProperties}>
@@ -16,5 +18,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="app-main">{children}</main>
       <TabBar />
     </div>
+  );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <VendorProvider>
+      <AppShell>{children}</AppShell>
+    </VendorProvider>
   );
 }

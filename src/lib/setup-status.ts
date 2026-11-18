@@ -1,5 +1,5 @@
 import { ensureVendorProfile } from "@/lib/vendor";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/browser";
 
 export interface SetupStatus {
   email: string | null;
@@ -9,7 +9,7 @@ export interface SetupStatus {
 }
 
 export async function getSetupStatus(): Promise<SetupStatus | null> {
-  const supabase = await createClient();
+  const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -19,6 +19,10 @@ export async function getSetupStatus(): Promise<SetupStatus | null> {
     {
       label: "vendors profile columns (owner_name, motto, phone2, socials)",
       run: () => supabase.from("vendors").select("owner_name,motto,phone2,instagram,facebook,tiktok,whatsapp").limit(1),
+    },
+    {
+      label: "vendors profit month setting (month_start_day)",
+      run: () => supabase.from("vendors").select("month_start_day").limit(1),
     },
     { label: "stalls table", run: () => supabase.from("stalls").select("id,vendor_id,name,accent_color").limit(1) },
     { label: "sales table", run: () => supabase.from("sales").select("id,price_reduction,customer_phone").limit(1) },
@@ -30,8 +34,16 @@ export async function getSetupStatus(): Promise<SetupStatus | null> {
       run: () => supabase.from("finance_entries").select("id,frequency").limit(1),
     },
     {
+      label: "finance entry payment account (account_id)",
+      run: () => supabase.from("finance_entries").select("id,account_id").limit(1),
+    },
+    {
       label: "finance_categories table",
       run: () => supabase.from("finance_categories").select("id,type,name").limit(1),
+    },
+    {
+      label: "product_categories table",
+      run: () => supabase.from("product_categories").select("id,vendor_id,name").limit(1),
     },
   ];
 

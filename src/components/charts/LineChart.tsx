@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { shortMoney, formatUGX } from "@/lib/format";
+import { shortMoney } from "@/lib/format";
+import { MoneyText } from "@/components/ui/MoneyText";
 import { niceMax } from "@/lib/chart";
 
 export interface ChartSeries {
@@ -164,7 +165,10 @@ export function LineChart({
         {series.map((lineEntry) => (
           <span key={lineEntry.name}>
             <i className="dotc" style={{ background: lineEntry.color }} />
-            {lineEntry.name} <b>{formatUGX(lineEntry.vals[clampedActive] ?? 0)}</b>
+            {lineEntry.name}{" "}
+            <b>
+              <MoneyText amount={lineEntry.vals[clampedActive] ?? 0} className="inline-money" fit={false} />
+            </b>
           </span>
         ))}
       </div>

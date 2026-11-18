@@ -1,14 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { niceStep } from "@/lib/chart";
-import {
-  formatNumber,
-  formatUGX,
-  monthDayLabel,
-  shortMoney,
-  weekdayLabel,
-} from "@/lib/format";
+import { profitBarLabelLayout, profitBarScale } from "@/lib/chart";
+import { formatMoney, formatNumber, monthDayLabel, shortMoney, weekdayLabel } from "@/lib/format";
 
 export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
   const [active, setActive] = useState(Math.max(0, days.length - 1));
@@ -17,19 +11,17 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
   const L = 66;
   const R = 8;
   const T = 26;
-  const B = 44;
+  const B = 68;
   const innerWidth = width - L - R;
   const innerHeight = height - T - B;
   const count = days.length;
 
-  let max = Math.max(...vals, 0);
-  let min = Math.min(...vals, 0);
-  if (max === 0 && min === 0) {
+  const rawMax = Math.max(...vals, 0);
+  const rawMin = Math.min(...vals, 0);
+  if (rawMax === 0 && rawMin === 0) {
     return <div className="empty">No profit recorded for this period yet</div>;
   }
-  const step = niceStep(Math.max(max, -min) / 4);
-  max = Math.ceil(max / step) * step;
-  min = -Math.ceil(-min / step) * step;
+  const { max, min, step } = profitBarScale(vals);
   const range = max - min || 1;
   const y = (value: number) => T + innerHeight - ((value - min) / range) * innerHeight;
   const groupWidth = innerWidth / count;
@@ -67,6 +59,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
           const valueY = y(value);
           const top = Math.min(zeroY, valueY);
           const barHeight = Math.max(1, Math.abs(zeroY - valueY));
+          const label = profitBarLabelLayout(value, valueY);
           return (
             <g key={days[index] ?? index}>
               <rect
@@ -80,7 +73,7 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
               {few ? (
                 <text
                   x={centerX}
-                  y={value < 0 ? valueY + 12 : valueY - 6}
+                  y={label.y}
                   textAnchor="middle"
                   fontSize="7.5"
                   fontWeight="700"
@@ -134,8 +127,8 @@ export function ProfitBars({ days, vals }: { days: string[]; vals: number[] }) {
             {monthDayLabel(days[current])} ({weekdayLabel(days[current])})
           </b>
           <span>
-            <i className="dotc" style={{ background: "#0F8A4D" }} />
-            Net profit <b>{formatUGX(vals[current] ?? 0)}</b>
+            <i className="dotc" style={{ background: "#1D4ED8" }} />
+            Net profit <b>{formatMoney(vals[current] ?? 0)}</b>
           </span>
         </div>
       ) : null}

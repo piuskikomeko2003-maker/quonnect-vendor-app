@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { NativeBridge } from "@/components/app/NativeBridge";
 import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
 
@@ -24,16 +25,15 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0F8A4D",
+  themeColor: "#1D4ED8",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>
       <body>
-        <div className="phone">
-          <ToastProvider>{children}</ToastProvider>
-        </div>
+        <NativeBridge />
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

@@ -1,7 +1,6 @@
-"use server";
-
-import { revalidatePath } from "next/cache";
+import { refreshAppData } from "@/lib/query";
 import { requireVendor } from "@/lib/auth";
+import { userMessage } from "@/lib/errors";
 import type { ProfileInput, SimpleResult, StallInput } from "@/lib/action-types";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -11,7 +10,7 @@ export async function updateStallAction(input: StallInput): Promise<SimpleResult
   const { supabase, vendor } = await requireVendor();
   const name = input.name.trim() || vendor.business_name;
   const tagline = input.tagline.trim();
-  const accent = HEX.test(input.accent_color) ? input.accent_color : "#0F8A4D";
+  const accent = HEX.test(input.accent_color) ? input.accent_color : "#1D4ED8";
 
   const [stallResult, vendorResult] = await Promise.all([
     supabase
@@ -26,10 +25,10 @@ export async function updateStallAction(input: StallInput): Promise<SimpleResult
       .eq("id", vendor.id),
   ]);
 
-  if (stallResult.error) return { ok: false, error: stallResult.error.message };
-  if (vendorResult.error) return { ok: false, error: vendorResult.error.message };
+  if (stallResult.error) return { ok: false, error: userMessage(stallResult.error) };
+  if (vendorResult.error) return { ok: false, error: userMessage(vendorResult.error) };
 
-  revalidatePath("/", "layout");
+  refreshAppData();
   return { ok: true };
 }
 
@@ -65,7 +64,7 @@ export async function updateProfileAction(input: ProfileInput): Promise<SimpleRe
     })
     .eq("id", vendor.id);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: userMessage(error) };
 
   await supabase.from("stalls").upsert(
     {
@@ -76,7 +75,7 @@ export async function updateProfileAction(input: ProfileInput): Promise<SimpleRe
     { onConflict: "vendor_id" },
   );
 
-  revalidatePath("/", "layout");
+  refreshAppData();
   return { ok: true };
 }
 
@@ -97,7 +96,34 @@ export async function changePasswordAction(
   if (signInError) return { ok: false, error: "Current password is wrong" };
 
   const { error } = await supabase.auth.updateUser({ password: newPassword });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: userMessage(error) };
+  return { ok: true };
+}
+
+export async function updateMonthStartDayAction(day: number): Promise<SimpleResult> {
+  const { supabase, vendor } = await requireVendor();
+  const startDay = Math.round(Number(day));
+  if (!Number.isFinite(startDay) || startDay < 1 || startDay > 28) {
+    return { ok: false, error: "Choose a start day between 1 and 28" };
+  }
+
+  const { error } = await supabase
+    .from("vendors")
+    .update({ month_start_day: startDay })
+    .eq("id", vendor.id);
+
+  if (error) {
+    // Older databases may not have the column yet.
+    if (["42703", "PGRST204"].includes(error.code ?? "")) {
+      return {
+        ok: false,
+        error: "Profit month settings are not set up yet. Apply the latest database migration.",
+      };
+    }
+    return { ok: false, error: userMessage(error) };
+  }
+
+  refreshAppData();
   return { ok: true };
 }
 
@@ -107,7 +133,7 @@ export async function updateLogoAction(logoUrl: string | null): Promise<SimpleRe
     .from("vendors")
     .update({ logo_url: logoUrl })
     .eq("id", vendor.id);
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/", "layout");
+  if (error) return { ok: false, error: userMessage(error) };
+  refreshAppData();
   return { ok: true };
 }

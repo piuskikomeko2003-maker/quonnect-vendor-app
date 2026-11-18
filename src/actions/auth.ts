@@ -1,13 +1,25 @@
-"use server";
-
-import { Buffer } from "node:buffer";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { Capacitor } from "@capacitor/core";
+import { createClient } from "@/lib/supabase/browser";
+import { clearSessionCache } from "@/lib/auth-session";
+import { markSignedIn, markSignedOut } from "@/lib/auth-marker";
 import { ensureVendorProfile } from "@/lib/vendor";
+import { NEW_VENDOR_FEATURES } from "@/lib/features";
 import type { ActionResult, SignupInput } from "@/lib/auth-types";
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const NATIVE_SCHEME = "com.quonnect.vendor";
 const cleanHandle = (value: string) => value.replace(/^@/, "").trim();
+
+/**
+ * Where Supabase should send the user after an email link.
+ * Web uses the current origin; the bundled app uses its custom scheme, which
+ * the NativeBridge component routes back into /auth/confirm.
+ */
+function authRedirectUrl(path: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  if (Capacitor.isNativePlatform()) return `${NATIVE_SCHEME}:///${path}`;
+  return `${window.location.origin}/${path.replace(/^\/+/, "")}`;
+}
 
 function friendlyAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -18,7 +30,7 @@ function friendlyAuthError(error: unknown): string {
     } catch {
       // Keep the generic message.
     }
-    return `Cannot reach Supabase at ${host}. The project may be paused, deleted, or .env.local is pointing at the wrong URL. Restore the project or update the URL and anon key, then restart the dev server.`;
+    return `Cannot reach Supabase at ${host}. The project may be paused, deleted, or .env.local is pointing at the wrong URL. Restore the project or update the URL and anon key, then restart the app.`;
   }
   return message || "Could not reach Supabase";
 }
@@ -40,6 +52,22 @@ function normalise(input: SignupInput) {
   };
 }
 
+/** Turn a base64 data URL into bytes without Node's Buffer. */
+function dataUrlBytes(dataUrl: string) {
+  const match = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+  if (!match) return null;
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return {
+    bytes,
+    contentType: match[1],
+    extension: match[1].split("/")[1]?.replace("jpeg", "jpg") ?? "jpg",
+  };
+}
+
 export async function signUpAction(input: SignupInput): Promise<ActionResult> {
   const fields = normalise(input);
 
@@ -55,13 +83,14 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
   if (!fields.category) return { ok: false, error: "Choose a business category" };
   if (!fields.location) return { ok: false, error: "Enter your location" };
 
-  const supabase = await createClient();
+  const supabase = createClient();
   let signUpResult: Awaited<ReturnType<typeof supabase.auth.signUp>>;
   try {
     signUpResult = await supabase.auth.signUp({
       email: fields.email,
       password: fields.password,
       options: {
+        emailRedirectTo: authRedirectUrl("auth/confirm"),
         data: {
           owner_name: fields.ownerName,
           business_name: fields.businessName,
@@ -77,34 +106,53 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
       },
     });
   } catch (error) {
+    console.error("[auth] signUp threw:", error);
     return { ok: false, error: friendlyAuthError(error) };
   }
 
   const { data, error } = signUpResult;
-  if (error) return { ok: false, error: friendlyAuthError(error) };
+  if (error) {
+    console.error("[auth] signUp failed:", error);
+    return { ok: false, error: friendlyAuthError(error) };
+  }
   if (!data.user) return { ok: false, error: "Could not create your account" };
 
   if (!data.session) {
-    return { ok: true, needsConfirmation: true };
+    // Supabase returns no session when "Confirm email" is enabled, but some
+    // projects create the user already-confirmed and expect an immediate
+    // sign-in. Try it so the vendor never has to retype their password.
+    try {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: fields.email,
+        password: fields.password,
+      });
+      if (signInError || !signInData.session) {
+        return { ok: true, needsConfirmation: true };
+      }
+    } catch {
+      return { ok: true, needsConfirmation: true };
+    }
   }
 
+  // A real session exists from here on.
+  clearSessionCache();
+  markSignedIn();
+
   let logoUrl: string | null = null;
-  if (input.logoDataUrl?.startsWith("data:image/")) {
-    try {
-      const match = input.logoDataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
-      if (match) {
-        const bytes = Buffer.from(match[2], "base64");
-        const extension = match[1].split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
-        const path = `${data.user.id}/logo.${extension}`;
+  if (input.logoDataUrl) {
+    const decoded = dataUrlBytes(input.logoDataUrl);
+    if (decoded) {
+      try {
+        const path = `${data.user.id}/logo.${decoded.extension}`;
         const { error: uploadError } = await supabase.storage
           .from("vendor-assets")
-          .upload(path, bytes, { contentType: match[1], upsert: true });
+          .upload(path, decoded.bytes, { contentType: decoded.contentType, upsert: true });
         if (!uploadError) {
           logoUrl = supabase.storage.from("vendor-assets").getPublicUrl(path).data.publicUrl;
         }
+      } catch {
+        // A missing logo should not block account creation.
       }
-    } catch {
-      // A missing logo should not block account creation.
     }
   }
 
@@ -113,6 +161,17 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
   }
 
   const { vendor } = await ensureVendorProfile(supabase, data.user);
+  if (vendor) {
+    // New signups start with the four core screens; optional features stay off
+    // until the vendor turns them on or first needs them.
+    const flags = (vendor.features_enabled ?? {}) as Record<string, unknown>;
+    if (Object.keys(flags).length === 0) {
+      await supabase
+        .from("vendors")
+        .update({ features_enabled: NEW_VENDOR_FEATURES })
+        .eq("id", vendor.id);
+    }
+  }
   if (vendor && logoUrl) {
     await supabase.from("vendors").update({ logo_url: logoUrl }).eq("id", vendor.id);
   }
@@ -121,7 +180,7 @@ export async function signUpAction(input: SignupInput): Promise<ActionResult> {
 }
 
 export async function signInAction(email: string, password: string): Promise<ActionResult> {
-  const supabase = await createClient();
+  const supabase = createClient();
   let signInResult: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
   try {
     signInResult = await supabase.auth.signInWithPassword({
@@ -129,36 +188,50 @@ export async function signInAction(email: string, password: string): Promise<Act
       password,
     });
   } catch (error) {
+    console.error("[auth] signIn threw:", error);
     return { ok: false, error: friendlyAuthError(error) };
   }
 
   const { data, error } = signInResult;
   if (error) {
+    console.error("[auth] signIn failed:", error);
     if (error.message.toLowerCase().includes("email not confirmed")) {
       return { ok: false, error: "Confirm your email first, then log in" };
     }
     return { ok: false, error: friendlyAuthError(error) };
   }
   if (data.user) await ensureVendorProfile(supabase, data.user);
+  // Record the session hint and drop any cached anonymous lookup so the app
+  // shell opens without another auth round trip.
+  clearSessionCache();
+  markSignedIn();
   return { ok: true };
 }
 
 export async function signOutAction() {
-  const supabase = await createClient();
+  const supabase = createClient();
   await supabase.auth.signOut();
-  redirect("/login");
+  clearSessionCache();
+  markSignedOut();
+  if (typeof window !== "undefined") window.location.assign("/login");
 }
 
 export async function requestPasswordReset(email: string): Promise<ActionResult> {
   if (!EMAIL_RE.test(email.trim())) {
     return { ok: false, error: "Enter your email first, then tap Forgot password" };
   }
-  const supabase = await createClient();
+  const supabase = createClient();
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
-    if (error) return { ok: false, error: friendlyAuthError(error) };
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: authRedirectUrl("auth/confirm?next=/settings"),
+    });
+    if (error) {
+      console.error("[auth] resetPasswordForEmail failed:", error);
+      return { ok: false, error: friendlyAuthError(error) };
+    }
     return { ok: true };
   } catch (error) {
+    console.error("[auth] resetPasswordForEmail threw:", error);
     return { ok: false, error: friendlyAuthError(error) };
   }
 }

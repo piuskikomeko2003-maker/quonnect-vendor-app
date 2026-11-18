@@ -4,8 +4,8 @@
   "description": "Run your market stall: stock, sales, money, analytics and your online stall.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#D3E8DC",
-  "theme_color": "#0F8A4D",
+  "background_color": "#EFEFEF",
+  "theme_color": "#1D4ED8",
   "icons": [
     {
       "src": "/quonnect_logo_transparent.png",

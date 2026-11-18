@@ -9,6 +9,14 @@
 --   2. modular schema
 --   3. stock report RPC (retired below)
 --   4. UI rebuild schema, RLS, storage and aggregate RPCs
+--   5. product categories
+--   6. vendor month start setting
+--   7. product photo gallery
+--   8. business accounts and the period dashboard
+--   9. business account management (create/edit, transfers, safe deactivation)
+--  10. stock purchases connected to business accounts
+--  11. money management (expense/income payment accounts)
+--  12. usability and corrections (safe stock purchase reversal)
 -- ====================================================================
 
 -- ====================================================================
@@ -1850,5 +1858,3515 @@ CREATE POLICY "Vendors manage finance categories" ON public.finance_categories
       WHERE v.id = finance_categories.vendor_id AND v.user_id = auth.uid()
     )
   );
+
+NOTIFY pgrst, 'reload schema';
+-- ====================================================================
+-- Vendor profit-month setting: the day of the month a business month
+-- starts on (e.g. 25 = 25 Jun → 24 Jul). Safe to re-run.
+-- ====================================================================
+
+ALTER TABLE public.vendors
+  ADD COLUMN IF NOT EXISTS month_start_day smallint NOT NULL DEFAULT 1;
+
+ALTER TABLE public.vendors
+  DROP CONSTRAINT IF EXISTS vendors_month_start_day_check;
+
+ALTER TABLE public.vendors
+  ADD CONSTRAINT vendors_month_start_day_check
+  CHECK (month_start_day BETWEEN 1 AND 28);
+
+NOTIFY pgrst, 'reload schema';
+-- ====================================================================
+-- Product categories: per-vendor custom categories for products.
+-- Safe to re-run.
+-- ====================================================================
+
+CREATE TABLE IF NOT EXISTS public.product_categories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id uuid NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (vendor_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_categories_vendor
+  ON public.product_categories (vendor_id, name);
+
+ALTER TABLE public.product_categories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Vendors manage product categories" ON public.product_categories;
+CREATE POLICY "Vendors manage product categories" ON public.product_categories
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = product_categories.vendor_id AND v.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = product_categories.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 20261029_01_product_photo_gallery.sql
+-- ====================================================================
+
+-- ====================================================================
+-- Multi-photo products: store an ordered gallery per product.
+-- The first URL is the cover and is mirrored into the legacy photo_url
+-- column so existing thumbnails and RPCs keep working. Safe to re-run.
+-- ====================================================================
+
+ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS photo_urls text[] NOT NULL DEFAULT '{}';
+
+-- Backfill the gallery from the existing single photo.
+UPDATE public.products
+SET photo_urls = ARRAY[photo_url]
+WHERE photo_url IS NOT NULL
+  AND photo_url <> ''
+  AND cardinality(photo_urls) = 0;
+
+-- Keep the legacy cover column aligned with the gallery order.
+UPDATE public.products
+SET photo_url = photo_urls[1]
+WHERE cardinality(photo_urls) > 0
+  AND (photo_url IS NULL OR photo_url <> photo_urls[1]);
+
+ALTER TABLE public.products
+  DROP CONSTRAINT IF EXISTS products_photo_urls_max_check;
+
+ALTER TABLE public.products
+  ADD CONSTRAINT products_photo_urls_max_check
+  CHECK (cardinality(photo_urls) <= 8);
+
+-- Any write to photo_urls updates the legacy cover automatically.
+CREATE OR REPLACE FUNCTION public.sync_product_photo_cover()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.photo_urls IS NULL THEN
+    NEW.photo_urls := '{}';
+  END IF;
+
+  NEW.photo_url := CASE
+    WHEN cardinality(NEW.photo_urls) > 0 THEN NEW.photo_urls[1]
+    ELSE NULL
+  END;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS products_sync_photo_cover ON public.products;
+CREATE TRIGGER products_sync_photo_cover
+  BEFORE INSERT OR UPDATE OF photo_urls ON public.products
+  FOR EACH ROW EXECUTE FUNCTION public.sync_product_photo_cover();
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 20261102_01_dashboard_accounts.sql
+-- ====================================================================
+
+-- ====================================================================
+-- Business accounts, account movements and the period-based dashboard.
+--
+-- Available Business Funds = sum(active account opening balances) +
+-- sum(account movements). It is deliberately independent of the reporting
+-- period. Sales only add the amount actually paid, so unpaid invoices never
+-- inflate available funds.
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Accounts and append-only account movements
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.financial_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id uuid NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  kind text NOT NULL DEFAULT 'cash'
+    CHECK (kind IN ('cash', 'bank', 'mtn_momo', 'airtel_money', 'other')),
+  opening_balance numeric(14, 2) NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (vendor_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_financial_accounts_vendor_active
+  ON public.financial_accounts (vendor_id, is_active);
+
+CREATE TABLE IF NOT EXISTS public.account_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id uuid NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES public.financial_accounts(id) ON DELETE CASCADE,
+  amount numeric(14, 2) NOT NULL,
+  kind text NOT NULL,
+  source_type text,
+  source_id uuid,
+  occurred_on date NOT NULL DEFAULT ((now() AT TIME ZONE 'Africa/Kampala')::date),
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_transactions_vendor_date
+  ON public.account_transactions (vendor_id, occurred_on DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_account_transactions_account
+  ON public.account_transactions (account_id, occurred_on DESC);
+CREATE INDEX IF NOT EXISTS idx_account_transactions_source
+  ON public.account_transactions (vendor_id, source_type, source_id);
+
+-- One sale contributes at most one payment movement.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_transactions_sale
+  ON public.account_transactions (vendor_id, source_id)
+  WHERE source_type = 'sale' AND source_id IS NOT NULL;
+
+ALTER TABLE public.financial_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.account_transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Vendors read own accounts" ON public.financial_accounts;
+CREATE POLICY "Vendors read own accounts"
+  ON public.financial_accounts
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = financial_accounts.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "Vendors update own accounts" ON public.financial_accounts;
+CREATE POLICY "Vendors update own accounts"
+  ON public.financial_accounts
+  FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = financial_accounts.vendor_id AND v.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = financial_accounts.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "Vendors read own account movements" ON public.account_transactions;
+CREATE POLICY "Vendors read own account movements"
+  ON public.account_transactions
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = account_transactions.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+-- Movement rows are written by controlled triggers/functions only.
+REVOKE INSERT, UPDATE, DELETE ON public.account_transactions FROM authenticated;
+
+-- --------------------------------------------------------------------
+-- 2. Account helpers
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.create_default_vendor_accounts(p_vendor_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  INSERT INTO public.financial_accounts (vendor_id, name, kind)
+  VALUES
+    (p_vendor_id, 'Cash', 'cash'),
+    (p_vendor_id, 'MTN Mobile Money', 'mtn_momo')
+  ON CONFLICT (vendor_id, name) DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_default_vendor_accounts(uuid) FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION public.vendors_create_default_accounts()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  PERFORM public.create_default_vendor_accounts(NEW.id);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS vendors_create_default_accounts ON public.vendors;
+CREATE TRIGGER vendors_create_default_accounts
+  AFTER INSERT ON public.vendors
+  FOR EACH ROW EXECUTE FUNCTION public.vendors_create_default_accounts();
+
+CREATE OR REPLACE FUNCTION public.account_for_payment_method(
+  p_vendor_id uuid,
+  p_method text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_name text;
+  v_kind text;
+  v_id uuid;
+  v_method text := COALESCE(NULLIF(btrim(p_method), ''), 'Cash');
+BEGIN
+  IF v_method ILIKE '%mtn%' OR v_method ILIKE '%mobile money%' THEN
+    v_name := 'MTN Mobile Money';
+    v_kind := 'mtn_momo';
+  ELSIF v_method ILIKE '%airtel%' THEN
+    v_name := 'Airtel Money';
+    v_kind := 'airtel_money';
+  ELSIF v_method ILIKE '%bank%' OR v_method ILIKE '%card%' THEN
+    v_name := 'Bank';
+    v_kind := 'bank';
+  ELSE
+    v_name := 'Cash';
+    v_kind := 'cash';
+  END IF;
+
+  INSERT INTO public.financial_accounts (vendor_id, name, kind)
+  VALUES (p_vendor_id, v_name, v_kind)
+  ON CONFLICT (vendor_id, name) DO NOTHING;
+
+  SELECT id INTO v_id
+  FROM public.financial_accounts
+  WHERE vendor_id = p_vendor_id AND name = v_name AND is_active;
+
+  RETURN v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.account_for_payment_method(uuid, text) FROM PUBLIC;
+
+-- --------------------------------------------------------------------
+-- 3. Keep account movements in sync with sales and finance entries
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.sales_record_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_amount numeric;
+  v_account uuid;
+BEGIN
+  IF NEW.deleted_at IS NOT NULL OR NEW.status IN ('cancelled', 'refunded') THEN
+    RETURN NEW;
+  END IF;
+
+  -- Only money actually received reaches an account. A credit sale with no
+  -- payment must not increase Available Business Funds.
+  v_amount := CASE
+    WHEN NEW.status = 'credit' THEN COALESCE(NEW.paid_amount, 0)
+    WHEN COALESCE(NEW.paid_amount, 0) > 0 THEN NEW.paid_amount
+    WHEN NEW.status IN ('completed', 'paid') THEN NEW.total
+    ELSE COALESCE(NEW.paid_amount, 0)
+  END;
+
+  IF COALESCE(v_amount, 0) = 0 THEN
+    RETURN NEW;
+  END IF;
+
+  v_account := public.account_for_payment_method(NEW.vendor_id, NEW.payment_method);
+
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES (
+    NEW.vendor_id, v_account, v_amount, 'sale_payment', 'sale', NEW.id, NEW.sale_date,
+    'Sale ' || COALESCE(NEW.order_no, '')
+  )
+  ON CONFLICT DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS sales_record_account_movement ON public.sales;
+CREATE TRIGGER sales_record_account_movement
+  AFTER INSERT OR UPDATE OF total, paid_amount, status, payment_method, sale_date ON public.sales
+  FOR EACH ROW EXECUTE FUNCTION public.sales_record_account_movement();
+
+CREATE OR REPLACE FUNCTION public.finance_entry_account_amount(
+  p_type text,
+  p_amount numeric
+)
+RETURNS numeric
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE WHEN p_type = 'expense' THEN -ABS(COALESCE(p_amount, 0)) ELSE ABS(COALESCE(p_amount, 0)) END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.finance_entries_record_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_account uuid;
+BEGIN
+  IF NEW.deleted_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_account := public.account_for_payment_method(NEW.vendor_id, 'Cash');
+
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES (
+    NEW.vendor_id,
+    v_account,
+    public.finance_entry_account_amount(NEW.type, NEW.amount),
+    CASE WHEN NEW.type = 'expense' THEN 'expense_payment' ELSE 'other_income' END,
+    'finance_entry',
+    NEW.id,
+    NEW.entry_date,
+    COALESCE(NULLIF(NEW.notes, ''), NEW.category)
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS finance_entries_record_account_movement ON public.finance_entries;
+CREATE TRIGGER finance_entries_record_account_movement
+  AFTER INSERT ON public.finance_entries
+  FOR EACH ROW EXECUTE FUNCTION public.finance_entries_record_account_movement();
+
+CREATE OR REPLACE FUNCTION public.finance_entries_reverse_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_account uuid;
+  v_amount numeric;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.deleted_at IS NOT NULL THEN
+      RETURN OLD;
+    END IF;
+    v_account := public.account_for_payment_method(OLD.vendor_id, 'Cash');
+    v_amount := -public.finance_entry_account_amount(OLD.type, OLD.amount);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      OLD.vendor_id, v_account, v_amount, 'reversal', 'finance_entry', OLD.id,
+      (now() AT TIME ZONE 'Africa/Kampala')::date, 'Deleted finance entry reversed'
+    );
+    RETURN OLD;
+  END IF;
+
+  -- An edit is a reversal plus a fresh movement. History stays append-only.
+  IF OLD.deleted_at IS NULL THEN
+    v_account := public.account_for_payment_method(OLD.vendor_id, 'Cash');
+    v_amount := -public.finance_entry_account_amount(OLD.type, OLD.amount);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      OLD.vendor_id, v_account, v_amount, 'reversal', 'finance_entry', OLD.id,
+      (now() AT TIME ZONE 'Africa/Kampala')::date, 'Edited finance entry reversed'
+    );
+  END IF;
+
+  IF NEW.deleted_at IS NULL THEN
+    v_account := public.account_for_payment_method(NEW.vendor_id, 'Cash');
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      NEW.vendor_id,
+      v_account,
+      public.finance_entry_account_amount(NEW.type, NEW.amount),
+      CASE WHEN NEW.type = 'expense' THEN 'expense_payment' ELSE 'other_income' END,
+      'finance_entry',
+      NEW.id,
+      NEW.entry_date,
+      COALESCE(NULLIF(NEW.notes, ''), NEW.category)
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS finance_entries_reverse_account_movement ON public.finance_entries;
+CREATE TRIGGER finance_entries_reverse_account_movement
+  AFTER UPDATE OR DELETE ON public.finance_entries
+  FOR EACH ROW EXECUTE FUNCTION public.finance_entries_reverse_account_movement();
+
+-- --------------------------------------------------------------------
+-- 4. Backfill accounts and existing movements
+-- --------------------------------------------------------------------
+SELECT public.create_default_vendor_accounts(id) FROM public.vendors;
+
+INSERT INTO public.account_transactions (
+  vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+)
+SELECT
+  s.vendor_id,
+  public.account_for_payment_method(s.vendor_id, s.payment_method),
+  CASE
+    WHEN s.status = 'credit' THEN COALESCE(s.paid_amount, 0)
+    WHEN COALESCE(s.paid_amount, 0) > 0 THEN s.paid_amount
+    WHEN s.status IN ('completed', 'paid') THEN s.total
+    ELSE COALESCE(s.paid_amount, 0)
+  END,
+  'sale_payment',
+  'sale',
+  s.id,
+  s.sale_date,
+  'Sale ' || COALESCE(s.order_no, '')
+FROM public.sales s
+WHERE s.deleted_at IS NULL
+  AND s.status NOT IN ('cancelled', 'refunded')
+  AND CASE
+    WHEN s.status = 'credit' THEN COALESCE(s.paid_amount, 0)
+    WHEN COALESCE(s.paid_amount, 0) > 0 THEN s.paid_amount
+    WHEN s.status IN ('completed', 'paid') THEN s.total
+    ELSE COALESCE(s.paid_amount, 0)
+  END <> 0
+  AND NOT EXISTS (
+    SELECT 1 FROM public.account_transactions at
+    WHERE at.source_type = 'sale' AND at.source_id = s.id
+  );
+
+INSERT INTO public.account_transactions (
+  vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+)
+SELECT
+  f.vendor_id,
+  public.account_for_payment_method(f.vendor_id, 'Cash'),
+  public.finance_entry_account_amount(f.type, f.amount),
+  CASE WHEN f.type = 'expense' THEN 'expense_payment' ELSE 'other_income' END,
+  'finance_entry',
+  f.id,
+  f.entry_date,
+  COALESCE(NULLIF(f.notes, ''), f.category)
+FROM public.finance_entries f
+WHERE f.deleted_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM public.account_transactions at
+    WHERE at.source_type = 'finance_entry' AND at.source_id = f.id
+  );
+
+-- --------------------------------------------------------------------
+-- 5. Dashboard snapshot: all period sections share p_from/p_to
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.vendor_dashboard(
+  p_vendor_id uuid,
+  p_from date,
+  p_to date
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_from date := COALESCE(p_from, (now() AT TIME ZONE 'Africa/Kampala')::date);
+  v_to date := COALESCE(p_to, (now() AT TIME ZONE 'Africa/Kampala')::date);
+  v_daily jsonb := '[]'::jsonb;
+  v_cash jsonb := '[]'::jsonb;
+  v_categories jsonb := '[]'::jsonb;
+  v_items jsonb := '[]'::jsonb;
+  v_transactions jsonb := '[]'::jsonb;
+  v_low_stock jsonb := '[]'::jsonb;
+  v_accounts jsonb := '[]'::jsonb;
+  v_available numeric := 0;
+  v_opening numeric := 0;
+  v_movements numeric := 0;
+  v_outstanding numeric := 0;
+  v_stock_value numeric := 0;
+  v_stock_units numeric := 0;
+  v_sales numeric := 0;
+  v_gross numeric := 0;
+  v_reduction numeric := 0;
+  v_income numeric := 0;
+  v_expenses numeric := 0;
+  v_operating numeric := 0;
+  v_profit numeric := 0;
+  v_orders integer := 0;
+  v_customers integer := 0;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF v_to < v_from THEN
+    RAISE EXCEPTION 'The end date must be on or after the start date';
+  END IF;
+
+  v_daily := public.vendor_daily_series(p_vendor_id, v_from, v_to);
+
+  SELECT
+    COALESCE(SUM((item->>'sales')::numeric), 0),
+    COALESCE(SUM((item->>'gross_profit')::numeric), 0),
+    COALESCE(SUM(GREATEST((item->>'price_reduction')::numeric, 0)), 0),
+    COALESCE(SUM((item->>'other_income')::numeric), 0),
+    COALESCE(SUM((item->>'expenses')::numeric), 0),
+    COALESCE(SUM((item->>'operating_expenses')::numeric), 0),
+    COALESCE(SUM((item->>'net_profit')::numeric), 0)
+  INTO v_sales, v_gross, v_reduction, v_income, v_expenses, v_operating, v_profit
+  FROM jsonb_array_elements(v_daily) item;
+
+  SELECT COUNT(*)::integer INTO v_orders
+  FROM public.sales
+  WHERE vendor_id = p_vendor_id
+    AND deleted_at IS NULL
+    AND sale_date >= v_from AND sale_date <= v_to;
+
+  SELECT COUNT(DISTINCT COALESCE(NULLIF(btrim(customer_phone), ''), NULLIF(lower(btrim(customer_name)), '')))::integer
+  INTO v_customers
+  FROM public.sales
+  WHERE vendor_id = p_vendor_id
+    AND deleted_at IS NULL
+    AND sale_date >= v_from AND sale_date <= v_to;
+
+  WITH days AS (
+    SELECT generate_series(v_from, v_to, interval '1 day')::date AS day
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'day', d.day,
+        'cash_in', COALESCE(ci.total, 0),
+        'cash_out', COALESCE(co.total, 0)
+      ) ORDER BY d.day
+    ),
+    '[]'::jsonb
+  )
+  INTO v_cash
+  FROM days d
+  LEFT JOIN LATERAL (
+    SELECT SUM(amount) AS total
+    FROM public.account_transactions
+    WHERE vendor_id = p_vendor_id
+      AND occurred_on = d.day
+      AND amount > 0
+      AND kind <> 'transfer'
+  ) ci ON true
+  LEFT JOIN LATERAL (
+    SELECT -SUM(amount) AS total
+    FROM public.account_transactions
+    WHERE vendor_id = p_vendor_id
+      AND occurred_on = d.day
+      AND amount < 0
+      AND kind <> 'transfer'
+  ) co ON true;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object('category', category, 'total', total)
+      ORDER BY total DESC, category
+    ),
+    '[]'::jsonb
+  )
+  INTO v_categories
+  FROM (
+    SELECT category, SUM(amount) AS total
+    FROM public.finance_entries
+    WHERE vendor_id = p_vendor_id
+      AND type = 'expense'
+      AND deleted_at IS NULL
+      AND entry_date >= v_from AND entry_date <= v_to
+    GROUP BY category
+  ) rows;
+
+  WITH sold AS (
+    SELECT
+      si.product_name AS name,
+      SUM(si.quantity) AS qty,
+      SUM(si.sold_price * si.quantity) AS sold_total,
+      SUM(si.listed_price * si.quantity) AS listed_total,
+      SUM(si.unit_cost * si.quantity) AS cost_total
+    FROM public.sale_items si
+    JOIN public.sales s ON s.id = si.sale_id
+    WHERE si.vendor_id = p_vendor_id
+      AND s.vendor_id = p_vendor_id
+      AND s.deleted_at IS NULL
+      AND s.sale_date >= v_from AND s.sale_date <= v_to
+    GROUP BY si.product_name
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'name', rows.name,
+        'cost', CASE WHEN rows.qty > 0 THEN rows.cost_total / rows.qty ELSE 0 END,
+        'expected', CASE WHEN rows.qty > 0 THEN rows.listed_total / rows.qty ELSE 0 END,
+        'actual', CASE WHEN rows.qty > 0 THEN rows.sold_total / rows.qty ELSE 0 END,
+        'sold', rows.qty
+      ) ORDER BY rows.qty DESC, rows.sold_total DESC, rows.name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_items
+  FROM (
+    SELECT * FROM sold
+    ORDER BY qty DESC, sold_total DESC, name
+    LIMIT 12
+  ) rows;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', id,
+        'kind', kind,
+        'title', title,
+        'category', category,
+        'amount', amount,
+        'date', entry_date,
+        'ts', created_at,
+        'items', items
+      ) ORDER BY entry_date DESC, created_at DESC
+    ),
+    '[]'::jsonb
+  )
+  INTO v_transactions
+  FROM (
+    SELECT * FROM (
+      SELECT
+        s.id,
+        'sale'::text AS kind,
+        'Sales'::text AS title,
+        'Sales'::text AS category,
+        s.total AS amount,
+        s.sale_date AS entry_date,
+        s.created_at,
+        (
+          SELECT jsonb_agg(product_name)
+          FROM (
+            SELECT product_name FROM public.sale_items WHERE sale_id = s.id LIMIT 2
+          ) names
+        ) AS items
+      FROM public.sales s
+      WHERE s.vendor_id = p_vendor_id
+        AND s.deleted_at IS NULL
+        AND s.sale_date >= v_from AND s.sale_date <= v_to
+
+      UNION ALL
+
+      SELECT
+        f.id,
+        'expense'::text,
+        COALESCE(NULLIF(f.notes, ''), f.category),
+        f.category,
+        -f.amount,
+        f.entry_date,
+        f.created_at,
+        NULL::jsonb
+      FROM public.finance_entries f
+      WHERE f.vendor_id = p_vendor_id
+        AND f.type = 'expense'
+        AND f.deleted_at IS NULL
+        AND f.entry_date >= v_from AND f.entry_date <= v_to
+
+      UNION ALL
+
+      SELECT
+        f.id,
+        'income'::text,
+        f.category,
+        'Other Income'::text,
+        f.amount,
+        f.entry_date,
+        f.created_at,
+        NULL::jsonb
+      FROM public.finance_entries f
+      WHERE f.vendor_id = p_vendor_id
+        AND f.type = 'income'
+        AND f.deleted_at IS NULL
+        AND f.entry_date >= v_from AND f.entry_date <= v_to
+    ) all_rows
+    ORDER BY entry_date DESC, created_at DESC
+    LIMIT 100
+  ) rows;
+
+  SELECT COALESCE(SUM(opening_balance), 0)
+  INTO v_opening
+  FROM public.financial_accounts
+  WHERE vendor_id = p_vendor_id AND is_active;
+
+  SELECT COALESCE(SUM(at.amount), 0)
+  INTO v_movements
+  FROM public.account_transactions at
+  JOIN public.financial_accounts a ON a.id = at.account_id
+  WHERE at.vendor_id = p_vendor_id AND a.is_active;
+
+  v_available := v_opening + v_movements;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', a.id,
+        'name', a.name,
+        'kind', a.kind,
+        'opening_balance', a.opening_balance,
+        'balance', a.opening_balance + COALESCE(t.total, 0),
+        'is_active', a.is_active
+      ) ORDER BY a.created_at, a.name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_accounts
+  FROM public.financial_accounts a
+  LEFT JOIN (
+    SELECT account_id, SUM(amount) AS total
+    FROM public.account_transactions
+    WHERE vendor_id = p_vendor_id
+    GROUP BY account_id
+  ) t ON t.account_id = a.id
+  WHERE a.vendor_id = p_vendor_id AND a.is_active;
+
+  SELECT COALESCE(SUM(GREATEST(GREATEST(COALESCE(s.due_amount, 0), COALESCE(s.total, 0) - COALESCE(s.paid_amount, 0)), 0)), 0)
+  INTO v_outstanding
+  FROM public.sales s
+  WHERE s.vendor_id = p_vendor_id
+    AND s.deleted_at IS NULL
+    AND s.status NOT IN ('cancelled', 'refunded');
+
+  SELECT
+    COALESCE(SUM(GREATEST(p.stock, 0) * COALESCE(p.cost, 0)), 0),
+    COALESCE(SUM(GREATEST(p.stock, 0)), 0)
+  INTO v_stock_value, v_stock_units
+  FROM public.products p
+  WHERE p.vendor_id = p_vendor_id AND p.deleted_at IS NULL;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', p.id,
+        'name', p.name,
+        'stock', p.stock,
+        'category', p.category,
+        'photo_url', p.photo_url,
+        'price', p.price,
+        'cost', p.cost,
+        'discount_pct', p.discount_pct
+      ) ORDER BY p.stock ASC, p.name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_low_stock
+  FROM (
+    SELECT * FROM public.products
+    WHERE vendor_id = p_vendor_id AND deleted_at IS NULL AND stock <= 3
+    ORDER BY stock ASC, name
+    LIMIT 12
+  ) p;
+
+  RETURN jsonb_build_object(
+    'period', jsonb_build_object(
+      'from', v_from,
+      'to', v_to,
+      'sales', v_sales,
+      'gross_profit', v_gross,
+      'price_reduction', v_reduction,
+      'other_income', v_income,
+      'expenses', v_expenses,
+      'operating_expenses', v_operating,
+      'net_profit', v_profit,
+      'orders', v_orders,
+      'customers', v_customers
+    ),
+    'daily', v_daily,
+    'cash', v_cash,
+    'categories', v_categories,
+    'items', v_items,
+    'transactions', v_transactions,
+    'current', jsonb_build_object(
+      'available_funds', v_available,
+      'customer_outstanding', v_outstanding,
+      'stock_value', v_stock_value,
+      'stock_units', v_stock_units,
+      'accounts', v_accounts
+    ),
+    'low_stock', v_low_stock
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.vendor_dashboard(uuid, date, date) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 9. 20261102_02_business_account_management.sql
+-- ====================================================================
+
+-- ====================================================================
+-- Business account management: manual accounts, transfers and safe
+-- deactivation.
+--
+-- Balances are never stored on the account. They are always derived as:
+--   opening_balance + SUM(account_transactions.amount)
+-- Account history is append-only; deactivating an account only flips
+-- is_active after its derived balance is zero, so money cannot silently
+-- disappear.
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Account metadata used by the management UI
+-- --------------------------------------------------------------------
+ALTER TABLE public.financial_accounts
+  ADD COLUMN IF NOT EXISTS description text,
+  ADD COLUMN IF NOT EXISTS color text,
+  ADD COLUMN IF NOT EXISTS icon text;
+
+-- Existing accounts keep their kind. New manual accounts can use a generic
+-- mobile-money or savings type in addition to the original kinds.
+ALTER TABLE public.financial_accounts
+  DROP CONSTRAINT IF EXISTS financial_accounts_kind_check;
+
+ALTER TABLE public.financial_accounts
+  ADD CONSTRAINT financial_accounts_kind_check
+  CHECK (kind IN ('cash', 'bank', 'mtn_momo', 'airtel_money', 'mobile_money', 'savings', 'other'));
+
+CREATE INDEX IF NOT EXISTS idx_financial_accounts_vendor_created
+  ON public.financial_accounts (vendor_id, created_at);
+
+-- --------------------------------------------------------------------
+-- 2. Create and edit accounts
+-- --------------------------------------------------------------------
+
+-- One place that validates an account type so direct API calls and the UI
+-- cannot disagree.
+CREATE OR REPLACE FUNCTION public.is_valid_account_kind(p_kind text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT COALESCE(p_kind, '') IN
+    ('cash', 'bank', 'mtn_momo', 'airtel_money', 'mobile_money', 'savings', 'other');
+$$;
+
+-- Payment methods only care about the broad group (cash / bank / mobile), so
+-- a manual "Mobile Money" account can receive MTN and Airtel sales too.
+CREATE OR REPLACE FUNCTION public.account_kind_group(p_kind text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN COALESCE(p_kind, '') IN ('mtn_momo', 'airtel_money', 'mobile_money') THEN 'mobile'
+    ELSE COALESCE(NULLIF(p_kind, ''), 'other')
+  END;
+$$;
+
+-- Keep sale payment-method mapping working when the named default account is
+-- inactive. It falls back to any active account in the same group.
+CREATE OR REPLACE FUNCTION public.account_for_payment_method(
+  p_vendor_id uuid,
+  p_method text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_name text;
+  v_kind text;
+  v_id uuid;
+  v_method text := COALESCE(NULLIF(btrim(p_method), ''), 'Cash');
+BEGIN
+  IF v_method ILIKE '%mtn%' OR v_method ILIKE '%mobile money%' THEN
+    v_name := 'MTN Mobile Money';
+    v_kind := 'mtn_momo';
+  ELSIF v_method ILIKE '%airtel%' THEN
+    v_name := 'Airtel Money';
+    v_kind := 'airtel_money';
+  ELSIF v_method ILIKE '%bank%' OR v_method ILIKE '%card%' THEN
+    v_name := 'Bank';
+    v_kind := 'bank';
+  ELSE
+    v_name := 'Cash';
+    v_kind := 'cash';
+  END IF;
+
+  INSERT INTO public.financial_accounts (vendor_id, name, kind)
+  VALUES (p_vendor_id, v_name, v_kind)
+  ON CONFLICT (vendor_id, name) DO NOTHING;
+
+  SELECT id INTO v_id
+  FROM public.financial_accounts
+  WHERE vendor_id = p_vendor_id AND name = v_name AND is_active;
+
+  IF v_id IS NULL THEN
+    SELECT id INTO v_id
+    FROM public.financial_accounts
+    WHERE vendor_id = p_vendor_id
+      AND public.account_kind_group(kind) = public.account_kind_group(v_kind)
+      AND is_active
+    ORDER BY created_at, name
+    LIMIT 1;
+  END IF;
+
+  -- Last resort for older data: a payment must still land somewhere. The
+  -- management UI prevents this path by keeping one active account per group.
+  IF v_id IS NULL THEN
+    UPDATE public.financial_accounts
+    SET is_active = true, updated_at = now()
+    WHERE vendor_id = p_vendor_id AND name = v_name
+    RETURNING id INTO v_id;
+  END IF;
+
+  RETURN v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.account_for_payment_method(uuid, text) FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION public.create_financial_account(
+  p_vendor_id uuid,
+  p_name text,
+  p_kind text DEFAULT 'cash',
+  p_opening_balance numeric DEFAULT 0,
+  p_description text DEFAULT NULL,
+  p_color text DEFAULT NULL,
+  p_icon text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_name text := btrim(COALESCE(p_name, ''));
+  v_kind text := COALESCE(NULLIF(btrim(p_kind), ''), 'cash');
+  v_opening numeric := ROUND(COALESCE(p_opening_balance, 0));
+  v_description text := NULLIF(btrim(COALESCE(p_description, '')), '');
+  v_color text := NULLIF(btrim(COALESCE(p_color, '')), '');
+  v_icon text := NULLIF(btrim(COALESCE(p_icon, '')), '');
+  v_account public.financial_accounts;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF v_name = '' THEN
+    RAISE EXCEPTION 'Enter an account name';
+  END IF;
+  IF char_length(v_name) > 80 THEN
+    RAISE EXCEPTION 'Account names must be 80 characters or fewer';
+  END IF;
+  IF NOT public.is_valid_account_kind(v_kind) THEN
+    RAISE EXCEPTION 'Choose a valid account type';
+  END IF;
+  IF v_description IS NOT NULL AND char_length(v_description) > 300 THEN
+    RAISE EXCEPTION 'Descriptions must be 300 characters or fewer';
+  END IF;
+  IF v_color IS NOT NULL AND v_color !~* '^#[0-9a-f]{6}$' THEN
+    RAISE EXCEPTION 'Choose a valid account colour';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.financial_accounts
+    WHERE vendor_id = p_vendor_id AND lower(name) = lower(v_name)
+  ) THEN
+    RAISE EXCEPTION 'An account with this name already exists';
+  END IF;
+
+  INSERT INTO public.financial_accounts (
+    vendor_id, name, kind, opening_balance, description, color, icon, is_active
+  )
+  VALUES (
+    p_vendor_id, v_name, v_kind, v_opening, v_description, v_color, v_icon, true
+  )
+  RETURNING * INTO v_account;
+
+  RETURN jsonb_build_object(
+    'id', v_account.id,
+    'name', v_account.name,
+    'kind', v_account.kind,
+    'opening_balance', v_account.opening_balance,
+    'description', v_account.description,
+    'color', v_account.color,
+    'icon', v_account.icon,
+    'is_active', v_account.is_active
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.update_financial_account(
+  p_vendor_id uuid,
+  p_account_id uuid,
+  p_name text,
+  p_kind text DEFAULT 'cash',
+  p_description text DEFAULT NULL,
+  p_color text DEFAULT NULL,
+  p_icon text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_name text := btrim(COALESCE(p_name, ''));
+  v_kind text := COALESCE(NULLIF(btrim(p_kind), ''), 'cash');
+  v_description text := NULLIF(btrim(COALESCE(p_description, '')), '');
+  v_color text := NULLIF(btrim(COALESCE(p_color, '')), '');
+  v_icon text := NULLIF(btrim(COALESCE(p_icon, '')), '');
+  v_account public.financial_accounts;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  SELECT * INTO v_account
+  FROM public.financial_accounts
+  WHERE id = p_account_id AND vendor_id = p_vendor_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Account not found';
+  END IF;
+
+  IF v_name = '' THEN
+    RAISE EXCEPTION 'Enter an account name';
+  END IF;
+  IF char_length(v_name) > 80 THEN
+    RAISE EXCEPTION 'Account names must be 80 characters or fewer';
+  END IF;
+  IF NOT public.is_valid_account_kind(v_kind) THEN
+    RAISE EXCEPTION 'Choose a valid account type';
+  END IF;
+  IF v_description IS NOT NULL AND char_length(v_description) > 300 THEN
+    RAISE EXCEPTION 'Descriptions must be 300 characters or fewer';
+  END IF;
+  IF v_color IS NOT NULL AND v_color !~* '^#[0-9a-f]{6}$' THEN
+    RAISE EXCEPTION 'Choose a valid account colour';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.financial_accounts
+    WHERE vendor_id = p_vendor_id
+      AND id <> p_account_id
+      AND lower(name) = lower(v_name)
+  ) THEN
+    RAISE EXCEPTION 'An account with this name already exists';
+  END IF;
+
+  UPDATE public.financial_accounts
+  SET
+    name = v_name,
+    kind = v_kind,
+    description = v_description,
+    color = v_color,
+    icon = v_icon,
+    updated_at = now()
+  WHERE id = p_account_id AND vendor_id = p_vendor_id
+  RETURNING * INTO v_account;
+
+  RETURN jsonb_build_object(
+    'id', v_account.id,
+    'name', v_account.name,
+    'kind', v_account.kind,
+    'opening_balance', v_account.opening_balance,
+    'description', v_account.description,
+    'color', v_account.color,
+    'icon', v_account.icon,
+    'is_active', v_account.is_active
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 3. Safe deactivation / reactivation
+-- --------------------------------------------------------------------
+
+-- Deactivating an account is only allowed when its derived balance is zero.
+-- The vendor must transfer the remaining money first, so history and money
+-- are never silently discarded.
+CREATE OR REPLACE FUNCTION public.set_financial_account_active(
+  p_vendor_id uuid,
+  p_account_id uuid,
+  p_active boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_account public.financial_accounts;
+  v_balance numeric;
+  v_group text;
+  v_group_label text;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  SELECT * INTO v_account
+  FROM public.financial_accounts
+  WHERE id = p_account_id AND vendor_id = p_vendor_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Account not found';
+  END IF;
+
+  IF p_active THEN
+    IF v_account.is_active THEN
+      RETURN jsonb_build_object('id', v_account.id, 'is_active', true);
+    END IF;
+
+    UPDATE public.financial_accounts
+    SET is_active = true, updated_at = now()
+    WHERE id = p_account_id AND vendor_id = p_vendor_id;
+
+    RETURN jsonb_build_object('id', p_account_id, 'is_active', true);
+  END IF;
+
+  IF NOT v_account.is_active THEN
+    RETURN jsonb_build_object('id', v_account.id, 'is_active', false);
+  END IF;
+
+  SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+  INTO v_balance
+  FROM public.account_transactions
+  WHERE account_id = p_account_id AND vendor_id = p_vendor_id;
+
+  IF v_balance <> 0 THEN
+    RAISE EXCEPTION
+      'This account still holds UGX %. Transfer the balance to another account before deactivating it.',
+      to_char(v_balance, 'FM999G999G999G990');
+  END IF;
+
+  -- Cash, bank and mobile-money accounts are used by sale payment methods.
+  -- Keep one active account in each group so recording a sale cannot fail.
+  v_group := public.account_kind_group(v_account.kind);
+  IF v_group IN ('cash', 'bank', 'mobile') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.financial_accounts
+      WHERE vendor_id = p_vendor_id
+        AND id <> p_account_id
+        AND is_active
+        AND public.account_kind_group(kind) = v_group
+    ) THEN
+      v_group_label := CASE
+        WHEN v_group = 'cash' THEN 'cash'
+        WHEN v_group = 'bank' THEN 'bank'
+        ELSE 'mobile money'
+      END;
+      RAISE EXCEPTION
+        'Keep at least one active % account so payments can still be recorded.',
+        v_group_label;
+    END IF;
+  END IF;
+
+  UPDATE public.financial_accounts
+  SET is_active = false, updated_at = now()
+  WHERE id = p_account_id AND vendor_id = p_vendor_id;
+
+  RETURN jsonb_build_object('id', p_account_id, 'is_active', false);
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 4. Transfers: two linked append-only movements
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.transfer_between_accounts(
+  p_vendor_id uuid,
+  p_from_account_id uuid,
+  p_to_account_id uuid,
+  p_amount numeric,
+  p_notes text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_amount numeric := ROUND(COALESCE(p_amount, 0));
+  v_from public.financial_accounts;
+  v_to public.financial_accounts;
+  v_from_balance numeric;
+  v_transfer_id uuid := gen_random_uuid();
+  v_notes text := NULLIF(btrim(COALESCE(p_notes, '')), '');
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF p_from_account_id IS NULL OR p_to_account_id IS NULL THEN
+    RAISE EXCEPTION 'Choose both accounts';
+  END IF;
+  IF p_from_account_id = p_to_account_id THEN
+    RAISE EXCEPTION 'Choose two different accounts';
+  END IF;
+  IF v_amount <= 0 THEN
+    RAISE EXCEPTION 'Enter an amount greater than zero';
+  END IF;
+
+  -- Lock in a stable order so two simultaneous opposite transfers cannot
+  -- deadlock each other.
+  PERFORM 1
+  FROM public.financial_accounts
+  WHERE vendor_id = p_vendor_id
+    AND id IN (p_from_account_id, p_to_account_id)
+  ORDER BY id
+  FOR UPDATE;
+
+  SELECT * INTO v_from
+  FROM public.financial_accounts
+  WHERE id = p_from_account_id AND vendor_id = p_vendor_id;
+
+  SELECT * INTO v_to
+  FROM public.financial_accounts
+  WHERE id = p_to_account_id AND vendor_id = p_vendor_id;
+
+  IF v_from.id IS NULL OR v_to.id IS NULL THEN
+    RAISE EXCEPTION 'Account not found';
+  END IF;
+  IF NOT v_from.is_active OR NOT v_to.is_active THEN
+    RAISE EXCEPTION 'Both accounts must be active for a transfer';
+  END IF;
+
+  SELECT v_from.opening_balance + COALESCE(SUM(amount), 0)
+  INTO v_from_balance
+  FROM public.account_transactions
+  WHERE account_id = p_from_account_id AND vendor_id = p_vendor_id;
+
+  IF v_from_balance < v_amount THEN
+    RAISE EXCEPTION
+      'Not enough money in %. Available: UGX %',
+      v_from.name,
+      to_char(v_from_balance, 'FM999G999G999G990');
+  END IF;
+
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES
+    (
+      p_vendor_id,
+      p_from_account_id,
+      -v_amount,
+      'transfer',
+      'transfer',
+      v_transfer_id,
+      v_today,
+      COALESCE(v_notes, 'Transfer to ' || v_to.name)
+    ),
+    (
+      p_vendor_id,
+      p_to_account_id,
+      v_amount,
+      'transfer',
+      'transfer',
+      v_transfer_id,
+      v_today,
+      COALESCE(v_notes, 'Transfer from ' || v_from.name)
+    );
+
+  RETURN jsonb_build_object(
+    'transfer_id', v_transfer_id,
+    'from_account_id', p_from_account_id,
+    'to_account_id', p_to_account_id,
+    'amount', v_amount,
+    'occurred_on', v_today
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 5. Overview read used by the accounts page
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.vendor_accounts_overview(
+  p_vendor_id uuid,
+  p_transaction_limit integer DEFAULT 200
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_limit integer := LEAST(GREATEST(COALESCE(p_transaction_limit, 200), 1), 500);
+  v_accounts jsonb := '[]'::jsonb;
+  v_transactions jsonb := '[]'::jsonb;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', rows.id,
+        'name', rows.name,
+        'kind', rows.kind,
+        'opening_balance', rows.opening_balance,
+        'description', rows.description,
+        'color', rows.color,
+        'icon', rows.icon,
+        'is_active', rows.is_active,
+        'balance', rows.balance,
+        'movement_count', rows.movement_count,
+        'last_activity', rows.last_activity
+      ) ORDER BY rows.is_active DESC, rows.created_at, rows.name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_accounts
+  FROM (
+    SELECT
+      a.id,
+      a.name,
+      a.kind,
+      a.opening_balance,
+      a.description,
+      a.color,
+      a.icon,
+      a.is_active,
+      a.created_at,
+      a.opening_balance + COALESCE(t.total, 0) AS balance,
+      COALESCE(t.movement_count, 0) AS movement_count,
+      t.last_activity
+    FROM public.financial_accounts a
+    LEFT JOIN (
+      SELECT
+        account_id,
+        SUM(amount) AS total,
+        COUNT(*)::integer AS movement_count,
+        MAX(occurred_on) AS last_activity
+      FROM public.account_transactions
+      WHERE vendor_id = p_vendor_id
+      GROUP BY account_id
+    ) t ON t.account_id = a.id
+    WHERE a.vendor_id = p_vendor_id
+  ) rows;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', rows.id,
+        'account_id', rows.account_id,
+        'account_name', rows.account_name,
+        'amount', rows.amount,
+        'kind', rows.kind,
+        'source_type', rows.source_type,
+        'source_id', rows.source_id,
+        'occurred_on', rows.occurred_on,
+        'notes', rows.notes,
+        'created_at', rows.created_at
+      ) ORDER BY rows.occurred_on DESC, rows.created_at DESC
+    ),
+    '[]'::jsonb
+  )
+  INTO v_transactions
+  FROM (
+    SELECT
+      tx.id,
+      tx.account_id,
+      a.name AS account_name,
+      tx.amount,
+      tx.kind,
+      tx.source_type,
+      tx.source_id,
+      tx.occurred_on,
+      tx.notes,
+      tx.created_at
+    FROM public.account_transactions tx
+    JOIN public.financial_accounts a ON a.id = tx.account_id
+    WHERE tx.vendor_id = p_vendor_id
+    ORDER BY tx.occurred_on DESC, tx.created_at DESC
+    LIMIT v_limit
+  ) rows;
+
+  RETURN jsonb_build_object(
+    'accounts', v_accounts,
+    'transactions', v_transactions
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 6. Permissions
+-- --------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.is_valid_account_kind(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_valid_account_kind(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.create_financial_account(uuid, text, text, numeric, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_financial_account(uuid, text, text, numeric, text, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.update_financial_account(uuid, uuid, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.update_financial_account(uuid, uuid, text, text, text, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_financial_account_active(uuid, uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_financial_account_active(uuid, uuid, boolean) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.transfer_between_accounts(uuid, uuid, uuid, numeric, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.transfer_between_accounts(uuid, uuid, uuid, numeric, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.vendor_accounts_overview(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.vendor_accounts_overview(uuid, integer) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 10. 20261102_03_stock_purchases.sql
+-- ====================================================================
+
+-- ====================================================================
+-- Stock purchases connected to business accounts.
+--
+-- One atomic RPC records the purchase, increases stock, writes stock
+-- movements, records the selected account payment and stores the supplier
+-- payable. Account money only moves for the amount actually paid.
+--
+-- Idempotency: a unique (vendor_id, idempotency_key) purchase makes a
+-- retried submit return the original purchase without changing stock or
+-- account balances twice.
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Purchase payment fields
+-- --------------------------------------------------------------------
+ALTER TABLE public.purchases
+  ADD COLUMN IF NOT EXISTS supplier_name text,
+  ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES public.financial_accounts(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS due_amount numeric(14, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS idempotency_key text;
+
+CREATE INDEX IF NOT EXISTS idx_purchases_vendor_date
+  ON public.purchases (vendor_id, purchase_date DESC, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_purchases_vendor_due
+  ON public.purchases (vendor_id, purchase_date DESC)
+  WHERE due_amount > 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_purchases_idempotency
+  ON public.purchases (vendor_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+-- A purchase can create at most one account payment movement.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_transactions_purchase
+  ON public.account_transactions (vendor_id, source_id)
+  WHERE source_type = 'purchase' AND source_id IS NOT NULL;
+
+-- --------------------------------------------------------------------
+-- 2. Record a multi-product stock purchase
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.record_stock_purchase(
+  p_vendor_id uuid,
+  p_items jsonb,
+  p_account_id uuid DEFAULT NULL,
+  p_amount_paid numeric DEFAULT 0,
+  p_supplier_name text DEFAULT NULL,
+  p_purchase_date date DEFAULT NULL,
+  p_notes text DEFAULT NULL,
+  p_idempotency_key text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+  v_date date := COALESCE(p_purchase_date, (now() AT TIME ZONE 'Africa/Kampala')::date);
+  v_key text := NULLIF(btrim(COALESCE(p_idempotency_key, '')), '');
+  v_items jsonb := COALESCE(p_items, '[]'::jsonb);
+  v_item jsonb;
+  v_product public.products%ROWTYPE;
+  v_account public.financial_accounts%ROWTYPE;
+  v_purchase public.purchases%ROWTYPE;
+  v_existing public.purchases%ROWTYPE;
+  v_purchase_id uuid;
+  v_product_id uuid;
+  v_seen uuid[] := '{}';
+  v_qty integer;
+  v_cost numeric;
+  v_total numeric := 0;
+  v_amount_paid numeric := ROUND(COALESCE(p_amount_paid, 0));
+  v_due numeric := 0;
+  v_account_balance numeric := NULL;
+  v_account_balance_after numeric := NULL;
+  v_supplier text := NULLIF(btrim(COALESCE(p_supplier_name, '')), '');
+  v_notes text := NULLIF(btrim(COALESCE(p_notes, '')), '');
+  v_reference text;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF jsonb_typeof(v_items) <> 'array' OR jsonb_array_length(v_items) = 0 THEN
+    RAISE EXCEPTION 'Add at least one product to the purchase';
+  END IF;
+
+  IF v_supplier IS NOT NULL AND char_length(v_supplier) > 120 THEN
+    RAISE EXCEPTION 'Supplier name must be 120 characters or fewer';
+  END IF;
+  IF v_notes IS NOT NULL AND char_length(v_notes) > 500 THEN
+    RAISE EXCEPTION 'Notes must be 500 characters or fewer';
+  END IF;
+  IF v_date > v_today THEN
+    v_date := v_today;
+  END IF;
+
+  -- Fast path for a retry: return the original purchase before touching stock.
+  IF v_key IS NOT NULL THEN
+    SELECT * INTO v_existing
+    FROM public.purchases
+    WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'purchase_id', v_existing.id,
+        'reference_no', v_existing.reference_no,
+        'total_amount', v_existing.total_amount,
+        'paid_amount', v_existing.paid_amount,
+        'due_amount', v_existing.due_amount,
+        'supplier_name', v_existing.supplier_name,
+        'account_id', v_existing.account_id,
+        'duplicate', true
+      );
+    END IF;
+  ELSE
+    v_key := gen_random_uuid()::text;
+  END IF;
+
+  -- First pass: validate, lock products and compute the total.
+  -- Locking in product-id order prevents deadlocks between two purchases.
+  FOR v_item IN
+    SELECT value
+    FROM jsonb_array_elements(v_items)
+    ORDER BY value->>'product_id'
+  LOOP
+    v_product_id := NULLIF(v_item->>'product_id', '')::uuid;
+    IF v_product_id IS NULL THEN
+      RAISE EXCEPTION 'A purchase line is missing its product';
+    END IF;
+    IF v_product_id = ANY(v_seen) THEN
+      RAISE EXCEPTION 'Each product can only appear once in a purchase';
+    END IF;
+    v_seen := array_append(v_seen, v_product_id);
+
+    v_qty := COALESCE((v_item->>'qty')::integer, (v_item->>'quantity')::integer);
+    IF v_qty IS NULL OR v_qty < 1 THEN
+      RAISE EXCEPTION 'Enter a quantity greater than zero for every product';
+    END IF;
+
+    SELECT * INTO v_product
+    FROM public.products
+    WHERE id = v_product_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'A product in this purchase no longer exists';
+    END IF;
+
+    v_cost := COALESCE(
+      NULLIF(v_item->>'unit_cost', '')::numeric,
+      NULLIF(v_item->>'cost', '')::numeric,
+      v_product.cost,
+      0
+    );
+    IF v_cost < 0 THEN
+      RAISE EXCEPTION 'Purchase costs cannot be negative';
+    END IF;
+    v_cost := ROUND(v_cost);
+
+    v_total := v_total + ROUND(v_qty::numeric * v_cost);
+  END LOOP;
+
+  v_total := ROUND(v_total);
+
+  IF v_amount_paid < 0 THEN
+    RAISE EXCEPTION 'Amount paid cannot be negative';
+  END IF;
+  IF v_amount_paid > v_total THEN
+    RAISE EXCEPTION 'Amount paid cannot be more than the total purchase cost';
+  END IF;
+
+  v_due := v_total - v_amount_paid;
+
+  IF v_amount_paid > 0 THEN
+    IF p_account_id IS NULL THEN
+      RAISE EXCEPTION 'Choose the account used to pay';
+    END IF;
+
+    SELECT * INTO v_account
+    FROM public.financial_accounts
+    WHERE id = p_account_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Payment account not found';
+    END IF;
+    IF NOT v_account.is_active THEN
+      RAISE EXCEPTION 'Choose an active account for this payment';
+    END IF;
+
+    SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+    INTO v_account_balance
+    FROM public.account_transactions
+    WHERE account_id = p_account_id AND vendor_id = p_vendor_id;
+
+    IF v_account_balance < v_amount_paid THEN
+      RAISE EXCEPTION
+        'Not enough money in %. Available: UGX %',
+        v_account.name,
+        to_char(v_account_balance, 'FM999G999G999G990');
+    END IF;
+  END IF;
+
+  v_reference := 'P-' || to_char(v_date, 'YYMMDD') || '-' ||
+    upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
+
+  -- The unique partial index is the concurrency guard for duplicate submits.
+  INSERT INTO public.purchases (
+    vendor_id, supplier_name, account_id, reference_no, purchase_date,
+    total_amount, paid_amount, due_amount, notes, idempotency_key
+  )
+  VALUES (
+    p_vendor_id,
+    v_supplier,
+    CASE WHEN v_amount_paid > 0 THEN p_account_id ELSE NULL END,
+    v_reference,
+    v_date,
+    v_total,
+    v_amount_paid,
+    v_due,
+    v_notes,
+    v_key
+  )
+  ON CONFLICT (vendor_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+  DO NOTHING
+  RETURNING * INTO v_purchase;
+
+  IF v_purchase.id IS NULL THEN
+    SELECT * INTO v_existing
+    FROM public.purchases
+    WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+    RETURN jsonb_build_object(
+      'purchase_id', v_existing.id,
+      'reference_no', v_existing.reference_no,
+      'total_amount', v_existing.total_amount,
+      'paid_amount', v_existing.paid_amount,
+      'due_amount', v_existing.due_amount,
+      'supplier_name', v_existing.supplier_name,
+      'account_id', v_existing.account_id,
+      'duplicate', true
+    );
+  END IF;
+
+  v_purchase_id := v_purchase.id;
+
+  -- Second pass: write purchase lines, stock and stock movements together.
+  FOR v_item IN SELECT * FROM jsonb_array_elements(v_items)
+  LOOP
+    v_product_id := (v_item->>'product_id')::uuid;
+    v_qty := COALESCE((v_item->>'qty')::integer, (v_item->>'quantity')::integer);
+
+    SELECT * INTO v_product
+    FROM public.products
+    WHERE id = v_product_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    v_cost := COALESCE(
+      NULLIF(v_item->>'unit_cost', '')::numeric,
+      NULLIF(v_item->>'cost', '')::numeric,
+      v_product.cost,
+      0
+    );
+    v_cost := ROUND(v_cost);
+
+    UPDATE public.products
+    SET
+      stock = COALESCE(stock, 0) + v_qty,
+      cost = v_cost,
+      updated_at = now()
+    WHERE id = v_product_id AND vendor_id = p_vendor_id;
+
+    INSERT INTO public.stock_movements (vendor_id, product_id, delta, reason)
+    VALUES (p_vendor_id, v_product_id, v_qty, 'restock');
+
+    INSERT INTO public.purchase_items (
+      purchase_id, vendor_id, product_id, quantity, unit_cost, total_cost
+    )
+    VALUES (
+      v_purchase_id, p_vendor_id, v_product_id, v_qty, v_cost,
+      ROUND(v_qty::numeric * v_cost)
+    );
+  END LOOP;
+
+  -- Only money actually paid reaches an account. Credit stays as a payable.
+  IF v_amount_paid > 0 THEN
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      p_vendor_id,
+      p_account_id,
+      -v_amount_paid,
+      'stock_purchase_payment',
+      'purchase',
+      v_purchase_id,
+      v_date,
+      'Stock purchase ' || v_reference ||
+        CASE WHEN v_supplier IS NOT NULL THEN ' · ' || v_supplier ELSE '' END
+    );
+
+    v_account_balance_after := v_account_balance - v_amount_paid;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'purchase_id', v_purchase_id,
+    'reference_no', v_reference,
+    'total_amount', v_total,
+    'paid_amount', v_amount_paid,
+    'due_amount', v_due,
+    'supplier_name', v_supplier,
+    'account_id', CASE WHEN v_amount_paid > 0 THEN p_account_id ELSE NULL END,
+    'account_name', CASE WHEN v_amount_paid > 0 THEN v_account.name ELSE NULL END,
+    'account_balance_after', v_account_balance_after,
+    'duplicate', false
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 3. Purchase overview for the stock screen
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.vendor_purchases_overview(
+  p_vendor_id uuid,
+  p_limit integer DEFAULT 25
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_limit integer := LEAST(GREATEST(COALESCE(p_limit, 25), 1), 100);
+  v_purchases jsonb := '[]'::jsonb;
+  v_payables jsonb := '[]'::jsonb;
+  v_outstanding numeric := 0;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  WITH recent AS (
+    SELECT
+      p.id,
+      p.reference_no,
+      p.supplier_name,
+      p.account_id,
+      a.name AS account_name,
+      p.purchase_date,
+      p.total_amount,
+      p.paid_amount,
+      p.due_amount,
+      p.notes,
+      p.created_at
+    FROM public.purchases p
+    LEFT JOIN public.financial_accounts a ON a.id = p.account_id
+    WHERE p.vendor_id = p_vendor_id AND p.deleted_at IS NULL
+    ORDER BY p.purchase_date DESC, p.created_at DESC
+    LIMIT v_limit
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', r.id,
+        'reference_no', r.reference_no,
+        'supplier_name', r.supplier_name,
+        'account_id', r.account_id,
+        'account_name', r.account_name,
+        'purchase_date', r.purchase_date,
+        'total_amount', r.total_amount,
+        'paid_amount', r.paid_amount,
+        'due_amount', r.due_amount,
+        'notes', r.notes,
+        'created_at', r.created_at,
+        'items', COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'product_id', pi.product_id,
+              'product_name', pr.name,
+              'quantity', pi.quantity,
+              'unit_cost', pi.unit_cost,
+              'total_cost', pi.total_cost
+            ) ORDER BY pi.created_at
+          )
+          FROM public.purchase_items pi
+          LEFT JOIN public.products pr ON pr.id = pi.product_id
+          WHERE pi.purchase_id = r.id
+        ), '[]'::jsonb)
+      ) ORDER BY r.purchase_date DESC, r.created_at DESC
+    ),
+    '[]'::jsonb
+  )
+  INTO v_purchases
+  FROM recent r;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'supplier_name', rows.supplier_name,
+        'due_amount', rows.due_amount,
+        'purchase_count', rows.purchase_count,
+        'last_purchase_date', rows.last_purchase_date
+      ) ORDER BY rows.due_amount DESC, rows.supplier_name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_payables
+  FROM (
+    SELECT
+      COALESCE(NULLIF(btrim(supplier_name), ''), 'Unspecified supplier') AS supplier_name,
+      SUM(due_amount) AS due_amount,
+      COUNT(*)::integer AS purchase_count,
+      MAX(purchase_date) AS last_purchase_date
+    FROM public.purchases
+    WHERE vendor_id = p_vendor_id
+      AND deleted_at IS NULL
+      AND due_amount > 0
+    GROUP BY 1
+  ) rows;
+
+  SELECT COALESCE(SUM(due_amount), 0)
+  INTO v_outstanding
+  FROM public.purchases
+  WHERE vendor_id = p_vendor_id
+    AND deleted_at IS NULL
+    AND due_amount > 0;
+
+  RETURN jsonb_build_object(
+    'purchases', v_purchases,
+    'supplier_payables', v_payables,
+    'outstanding', v_outstanding
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 4. Permissions
+-- --------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.record_stock_purchase(uuid, jsonb, uuid, numeric, text, date, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_stock_purchase(uuid, jsonb, uuid, numeric, text, date, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.vendor_purchases_overview(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.vendor_purchases_overview(uuid, integer) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 11. 20261102_04_money_management.sql
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Link finance entries to the account that moved the money
+-- --------------------------------------------------------------------
+ALTER TABLE public.finance_entries
+  ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES public.financial_accounts(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_finance_entries_account
+  ON public.finance_entries (account_id);
+
+-- --------------------------------------------------------------------
+-- 2. Resolve a safe target account
+-- --------------------------------------------------------------------
+-- Uses the selected account only when it belongs to the same vendor. Older
+-- rows (and any client that has not been updated yet) fall back to Cash.
+CREATE OR REPLACE FUNCTION public.finance_entry_target_account(
+  p_vendor_id uuid,
+  p_account_id uuid
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF p_account_id IS NOT NULL THEN
+    SELECT id INTO v_id
+    FROM public.financial_accounts
+    WHERE id = p_account_id AND vendor_id = p_vendor_id;
+
+    IF v_id IS NOT NULL THEN
+      RETURN v_id;
+    END IF;
+  END IF;
+
+  RETURN public.account_for_payment_method(p_vendor_id, 'Cash');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.finance_entry_target_account(uuid, uuid) FROM PUBLIC;
+
+-- --------------------------------------------------------------------
+-- 3. Record the chosen account on insert
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.finance_entries_record_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_account uuid;
+BEGIN
+  IF NEW.deleted_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_account := public.finance_entry_target_account(NEW.vendor_id, NEW.account_id);
+
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES (
+    NEW.vendor_id,
+    v_account,
+    public.finance_entry_account_amount(NEW.type, NEW.amount),
+    CASE WHEN NEW.type = 'expense' THEN 'expense_payment' ELSE 'other_income' END,
+    'finance_entry',
+    NEW.id,
+    NEW.entry_date,
+    COALESCE(NULLIF(NEW.notes, ''), NEW.category)
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS finance_entries_record_account_movement ON public.finance_entries;
+CREATE TRIGGER finance_entries_record_account_movement
+  AFTER INSERT ON public.finance_entries
+  FOR EACH ROW EXECUTE FUNCTION public.finance_entries_record_account_movement();
+
+-- --------------------------------------------------------------------
+-- 4. Reverse the old account and post the new one on edit/delete
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.finance_entries_reverse_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_account uuid;
+  v_amount numeric;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.deleted_at IS NOT NULL THEN
+      RETURN OLD;
+    END IF;
+
+    v_account := public.finance_entry_target_account(OLD.vendor_id, OLD.account_id);
+    v_amount := -public.finance_entry_account_amount(OLD.type, OLD.amount);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      OLD.vendor_id, v_account, v_amount, 'reversal', 'finance_entry', OLD.id,
+      (now() AT TIME ZONE 'Africa/Kampala')::date, 'Deleted finance entry reversed'
+    );
+    RETURN OLD;
+  END IF;
+
+  -- An edit is a reversal plus a fresh movement. History stays append-only.
+  IF OLD.deleted_at IS NULL THEN
+    v_account := public.finance_entry_target_account(OLD.vendor_id, OLD.account_id);
+    v_amount := -public.finance_entry_account_amount(OLD.type, OLD.amount);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      OLD.vendor_id, v_account, v_amount, 'reversal', 'finance_entry', OLD.id,
+      (now() AT TIME ZONE 'Africa/Kampala')::date, 'Edited finance entry reversed'
+    );
+  END IF;
+
+  IF NEW.deleted_at IS NULL THEN
+    v_account := public.finance_entry_target_account(NEW.vendor_id, NEW.account_id);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      NEW.vendor_id,
+      v_account,
+      public.finance_entry_account_amount(NEW.type, NEW.amount),
+      CASE WHEN NEW.type = 'expense' THEN 'expense_payment' ELSE 'other_income' END,
+      'finance_entry',
+      NEW.id,
+      NEW.entry_date,
+      COALESCE(NULLIF(NEW.notes, ''), NEW.category)
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS finance_entries_reverse_account_movement ON public.finance_entries;
+CREATE TRIGGER finance_entries_reverse_account_movement
+  AFTER UPDATE OR DELETE ON public.finance_entries
+  FOR EACH ROW EXECUTE FUNCTION public.finance_entries_reverse_account_movement();
+
+-- --------------------------------------------------------------------
+-- 5. Existing entries keep their current Cash movement
+-- --------------------------------------------------------------------
+-- The update trigger treats every edit as a reversal plus a fresh movement.
+-- Backfilling account_id is not a real money movement, so pause that trigger
+-- while existing rows are linked to their current Cash account.
+ALTER TABLE public.finance_entries
+  DISABLE TRIGGER finance_entries_reverse_account_movement;
+
+UPDATE public.finance_entries f
+SET account_id = public.account_for_payment_method(f.vendor_id, 'Cash')
+WHERE f.account_id IS NULL;
+
+ALTER TABLE public.finance_entries
+  ENABLE TRIGGER finance_entries_reverse_account_movement;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ====================================================================
+-- 12. 20261102_05_usability_and_corrections.sql
+-- ====================================================================
+-- ====================================================================
+-- Phase 7: safe transaction correction.
+--
+-- A stock purchase can be reversed without deleting its history. The
+-- purchase row stays (soft deleted), its lines stay, and the account ledger
+-- receives a matching refund movement. Stock is reduced and a stock movement
+-- is written for every line.
+-- ====================================================================
+
+-- Stock movements written by a reversal need their own reason so reports and
+-- future audits can tell them apart from manual adjustments.
+ALTER TABLE public.stock_movements
+  DROP CONSTRAINT IF EXISTS stock_movements_reason_check;
+
+ALTER TABLE public.stock_movements
+  ADD CONSTRAINT stock_movements_reason_check
+  CHECK (reason IN ('sale', 'restock', 'adjustment', 'purchase_reversal', 'sale_reversal'));
+
+CREATE OR REPLACE FUNCTION public.reverse_stock_purchase(
+  p_vendor_id uuid,
+  p_purchase_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+  v_purchase public.purchases%ROWTYPE;
+  v_item public.purchase_items%ROWTYPE;
+  v_product public.products%ROWTYPE;
+  v_account public.financial_accounts%ROWTYPE;
+  v_refund numeric := 0;
+  v_balance_after numeric := NULL;
+  v_items_reversed integer := 0;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF p_purchase_id IS NULL THEN
+    RAISE EXCEPTION 'Purchase not found';
+  END IF;
+
+  SELECT * INTO v_purchase
+  FROM public.purchases
+  WHERE id = p_purchase_id AND vendor_id = p_vendor_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Purchase not found. Refresh and try again.';
+  END IF;
+
+  IF v_purchase.deleted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'This purchase was already reversed.';
+  END IF;
+
+  -- Validate every line before changing anything. A purchase whose stock has
+  -- already been sold cannot be reversed without making stock negative.
+  FOR v_item IN
+    SELECT *
+    FROM public.purchase_items
+    WHERE purchase_id = p_purchase_id AND vendor_id = p_vendor_id
+    ORDER BY product_id
+  LOOP
+    IF v_item.product_id IS NOT NULL THEN
+      SELECT * INTO v_product
+      FROM public.products
+      WHERE id = v_item.product_id AND vendor_id = p_vendor_id
+      FOR UPDATE;
+
+      IF FOUND AND COALESCE(v_product.stock, 0) < v_item.quantity THEN
+        RAISE EXCEPTION
+          'Cannot reverse this purchase because % has already been sold. Adjust stock first.',
+          v_product.name;
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- Reverse stock and record the movement for each line.
+  FOR v_item IN
+    SELECT *
+    FROM public.purchase_items
+    WHERE purchase_id = p_purchase_id AND vendor_id = p_vendor_id
+    ORDER BY product_id
+  LOOP
+    IF v_item.product_id IS NOT NULL THEN
+      SELECT * INTO v_product
+      FROM public.products
+      WHERE id = v_item.product_id AND vendor_id = p_vendor_id
+      FOR UPDATE;
+
+      IF FOUND THEN
+        UPDATE public.products
+        SET stock = COALESCE(stock, 0) - v_item.quantity,
+            updated_at = now()
+        WHERE id = v_item.product_id AND vendor_id = p_vendor_id;
+
+        INSERT INTO public.stock_movements (vendor_id, product_id, delta, reason)
+        VALUES (p_vendor_id, v_item.product_id, -v_item.quantity, 'purchase_reversal');
+      END IF;
+    END IF;
+
+    v_items_reversed := v_items_reversed + 1;
+  END LOOP;
+
+  -- Refund only money that actually left an account.
+  v_refund := ROUND(COALESCE(v_purchase.paid_amount, 0));
+
+  IF v_refund > 0 AND v_purchase.account_id IS NOT NULL THEN
+    SELECT * INTO v_account
+    FROM public.financial_accounts
+    WHERE id = v_purchase.account_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    IF FOUND THEN
+      INSERT INTO public.account_transactions (
+        vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+      )
+      VALUES (
+        p_vendor_id,
+        v_account.id,
+        v_refund,
+        'reversal',
+        'purchase_reversal',
+        p_purchase_id,
+        v_today,
+        'Reversed stock purchase ' || COALESCE(v_purchase.reference_no, '')
+      );
+
+      SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+      INTO v_balance_after
+      FROM public.account_transactions
+      WHERE account_id = v_account.id AND vendor_id = p_vendor_id;
+    END IF;
+  END IF;
+
+  UPDATE public.purchases
+  SET deleted_at = now(),
+      updated_at = now()
+  WHERE id = p_purchase_id AND vendor_id = p_vendor_id;
+
+  RETURN jsonb_build_object(
+    'purchase_id', p_purchase_id,
+    'reference_no', v_purchase.reference_no,
+    'refunded_amount', v_refund,
+    'account_name', CASE WHEN v_account.id IS NOT NULL THEN v_account.name ELSE NULL END,
+    'account_balance_after', v_balance_after,
+    'items_reversed', v_items_reversed
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- Reverse a sale without erasing it
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.reverse_sale(
+  p_vendor_id uuid,
+  p_sale_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+  v_sale public.sales%ROWTYPE;
+  v_item public.sale_items%ROWTYPE;
+  v_product public.products%ROWTYPE;
+  v_tx public.account_transactions%ROWTYPE;
+  v_account public.financial_accounts%ROWTYPE;
+  v_refund numeric := 0;
+  v_balance_after numeric := NULL;
+  v_items_reversed integer := 0;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF p_sale_id IS NULL THEN
+    RAISE EXCEPTION 'Sale not found';
+  END IF;
+
+  SELECT * INTO v_sale
+  FROM public.sales
+  WHERE id = p_sale_id AND vendor_id = p_vendor_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Sale not found. Refresh and try again.';
+  END IF;
+
+  IF v_sale.deleted_at IS NOT NULL OR v_sale.status IN ('cancelled', 'refunded') THEN
+    RAISE EXCEPTION 'This sale was already reversed.';
+  END IF;
+
+  -- Use the exact money movement created when the sale was recorded. This
+  -- keeps partial payments and credit sales correct.
+  SELECT * INTO v_tx
+  FROM public.account_transactions
+  WHERE vendor_id = p_vendor_id
+    AND source_type = 'sale'
+    AND source_id = p_sale_id
+    AND amount > 0
+  ORDER BY created_at
+  LIMIT 1;
+
+  IF FOUND THEN
+    v_refund := v_tx.amount;
+
+    SELECT * INTO v_account
+    FROM public.financial_accounts
+    WHERE id = v_tx.account_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+  END IF;
+
+  -- Put every sold unit back into stock.
+  FOR v_item IN
+    SELECT *
+    FROM public.sale_items
+    WHERE sale_id = p_sale_id AND vendor_id = p_vendor_id
+    ORDER BY product_id
+  LOOP
+    IF v_item.product_id IS NOT NULL THEN
+      SELECT * INTO v_product
+      FROM public.products
+      WHERE id = v_item.product_id AND vendor_id = p_vendor_id
+      FOR UPDATE;
+
+      IF FOUND THEN
+        UPDATE public.products
+        SET stock = COALESCE(stock, 0) + v_item.quantity,
+            updated_at = now()
+        WHERE id = v_item.product_id AND vendor_id = p_vendor_id;
+
+        INSERT INTO public.stock_movements (vendor_id, product_id, delta, reason)
+        VALUES (p_vendor_id, v_item.product_id, v_item.quantity, 'sale_reversal');
+      END IF;
+    END IF;
+
+    v_items_reversed := v_items_reversed + 1;
+  END LOOP;
+
+  IF v_refund > 0 AND v_tx.account_id IS NOT NULL THEN
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      p_vendor_id,
+      v_tx.account_id,
+      -v_refund,
+      'reversal',
+      'sale_reversal',
+      p_sale_id,
+      v_today,
+      'Reversed sale ' || COALESCE(v_sale.order_no, '')
+    );
+
+    SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+    INTO v_balance_after
+    FROM public.account_transactions
+    WHERE account_id = v_tx.account_id AND vendor_id = p_vendor_id;
+  END IF;
+
+  UPDATE public.sales
+  SET status = 'refunded',
+      deleted_at = now()
+  WHERE id = p_sale_id AND vendor_id = p_vendor_id;
+
+  IF v_sale.customer_id IS NOT NULL THEN
+    UPDATE public.customers
+    SET total_orders = GREATEST(0, total_orders - 1),
+        total_spent = GREATEST(0, total_spent - v_sale.total),
+        updated_at = now()
+    WHERE id = v_sale.customer_id AND vendor_id = p_vendor_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'sale_id', p_sale_id,
+    'order_no', v_sale.order_no,
+    'total', v_sale.total,
+    'refunded_amount', v_refund,
+    'account_name', CASE WHEN v_account.id IS NOT NULL THEN v_account.name ELSE NULL END,
+    'account_balance_after', v_balance_after,
+    'items_reversed', v_items_reversed
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reverse_stock_purchase(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reverse_stock_purchase(uuid, uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.reverse_sale(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reverse_sale(uuid, uuid) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+-- ====================================================================
+-- Phase 11: Settlements and outstanding payments.
+--
+-- A settlement is the payment of an existing balance. It is NOT a new sale
+-- and it is NOT a new stock purchase.
+--
+-- Customer collections:
+--   * increase the selected receiving account
+--   * reduce the customer's outstanding sales
+--   * never create sales revenue (the sale was already recorded)
+--
+-- Supplier payments:
+--   * reduce the selected paying account
+--   * reduce outstanding purchases
+--   * never record the stock purchase expense again
+--
+-- One settlement can be allocated across several outstanding sales or
+-- purchases. The idempotency key and unique ledger index make a retried
+-- submit return the original payment instead of posting it twice.
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- 1. Settlement payment header
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.settlement_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id uuid NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  settlement_type text NOT NULL
+    CHECK (settlement_type IN ('customer_collection', 'supplier_payment')),
+  customer_id uuid REFERENCES public.customers(id) ON DELETE SET NULL,
+  customer_name text,
+  supplier_name text,
+  account_id uuid NOT NULL REFERENCES public.financial_accounts(id) ON DELETE RESTRICT,
+  payment_method text,
+  amount numeric(14, 2) NOT NULL CHECK (amount > 0),
+  reference text,
+  paid_on date NOT NULL DEFAULT CURRENT_DATE,
+  idempotency_key text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT settlement_payments_party_check CHECK (
+    (settlement_type = 'customer_collection' AND supplier_name IS NULL)
+    OR
+    (settlement_type = 'supplier_payment' AND customer_id IS NULL AND supplier_name IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_settlement_payments_idempotency
+  ON public.settlement_payments (vendor_id, idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_settlement_payments_vendor_date
+  ON public.settlement_payments (vendor_id, settlement_type, paid_on DESC, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_settlement_payments_customer
+  ON public.settlement_payments (vendor_id, customer_id)
+  WHERE customer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_settlement_payments_supplier
+  ON public.settlement_payments (vendor_id, lower(supplier_name))
+  WHERE supplier_name IS NOT NULL;
+
+-- --------------------------------------------------------------------
+-- 2. Settlement allocations
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.settlement_allocations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id uuid NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  payment_id uuid NOT NULL REFERENCES public.settlement_payments(id) ON DELETE CASCADE,
+  sale_id uuid REFERENCES public.sales(id) ON DELETE RESTRICT,
+  purchase_id uuid REFERENCES public.purchases(id) ON DELETE RESTRICT,
+  amount numeric(14, 2) NOT NULL CHECK (amount > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT settlement_allocations_target_check CHECK (
+    (sale_id IS NOT NULL AND purchase_id IS NULL)
+    OR
+    (sale_id IS NULL AND purchase_id IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_settlement_allocations_payment_sale
+  ON public.settlement_allocations (payment_id, sale_id)
+  WHERE sale_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_settlement_allocations_payment_purchase
+  ON public.settlement_allocations (payment_id, purchase_id)
+  WHERE purchase_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_settlement_allocations_sale
+  ON public.settlement_allocations (vendor_id, sale_id)
+  WHERE sale_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_settlement_allocations_purchase
+  ON public.settlement_allocations (vendor_id, purchase_id)
+  WHERE purchase_id IS NOT NULL;
+
+-- One account movement per settlement payment.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_transactions_settlement
+  ON public.account_transactions (vendor_id, source_type, source_id)
+  WHERE source_type = 'settlement_payment';
+
+-- Helpful for finding open balances quickly.
+CREATE INDEX IF NOT EXISTS idx_sales_vendor_outstanding
+  ON public.sales (vendor_id, sale_date)
+  WHERE deleted_at IS NULL AND due_amount > 0;
+
+-- --------------------------------------------------------------------
+-- 3. Row level security
+-- --------------------------------------------------------------------
+ALTER TABLE public.settlement_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settlement_allocations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Vendors manage settlement payments" ON public.settlement_payments;
+CREATE POLICY "Vendors manage settlement payments"
+  ON public.settlement_payments
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = settlement_payments.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "Vendors manage settlement allocations" ON public.settlement_allocations;
+CREATE POLICY "Vendors manage settlement allocations"
+  ON public.settlement_allocations
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.vendors v
+      WHERE v.id = settlement_allocations.vendor_id AND v.user_id = auth.uid()
+    )
+  );
+
+-- --------------------------------------------------------------------
+-- 4. Keep the sale ledger correct when settlements update a sale
+-- --------------------------------------------------------------------
+-- Settlement payments write their own account movement. The sale trigger
+-- must therefore skip updates for a sale that already has settlement
+-- allocations, otherwise the money would be counted twice. For ordinary
+-- edits it now posts only the change in money received (a delta) instead of
+-- the whole paid amount again. Sales that pre-date settlements behave as
+-- before.
+CREATE OR REPLACE FUNCTION public.sales_record_account_movement()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_old_amount numeric := 0;
+  v_new_amount numeric := 0;
+  v_old_account uuid;
+  v_new_account uuid;
+  v_has_settlement boolean := false;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    SELECT EXISTS (
+      SELECT 1 FROM public.settlement_allocations a WHERE a.sale_id = NEW.id
+    ) INTO v_has_settlement;
+
+    IF v_has_settlement THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF NEW.deleted_at IS NOT NULL OR NEW.status IN ('cancelled', 'refunded') THEN
+    RETURN NEW;
+  END IF;
+
+  v_new_amount := CASE
+    WHEN NEW.status = 'credit' THEN COALESCE(NEW.paid_amount, 0)
+    WHEN COALESCE(NEW.paid_amount, 0) > 0 THEN NEW.paid_amount
+    WHEN NEW.status IN ('completed', 'paid') THEN NEW.total
+    ELSE COALESCE(NEW.paid_amount, 0)
+  END;
+
+  IF TG_OP = 'INSERT' THEN
+    IF COALESCE(v_new_amount, 0) = 0 THEN
+      RETURN NEW;
+    END IF;
+
+    v_new_account := public.account_for_payment_method(NEW.vendor_id, NEW.payment_method);
+
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      NEW.vendor_id, v_new_account, v_new_amount, 'sale_payment', 'sale', NEW.id, NEW.sale_date,
+      'Sale ' || COALESCE(NEW.order_no, '')
+    );
+
+    RETURN NEW;
+  END IF;
+
+  v_old_amount := CASE
+    WHEN OLD.status = 'credit' THEN COALESCE(OLD.paid_amount, 0)
+    WHEN COALESCE(OLD.paid_amount, 0) > 0 THEN OLD.paid_amount
+    WHEN OLD.status IN ('completed', 'paid') THEN OLD.total
+    ELSE COALESCE(OLD.paid_amount, 0)
+  END;
+
+  v_old_account := public.account_for_payment_method(OLD.vendor_id, OLD.payment_method);
+
+  IF NEW.payment_method IS DISTINCT FROM OLD.payment_method THEN
+    v_new_account := public.account_for_payment_method(NEW.vendor_id, NEW.payment_method);
+
+    IF COALESCE(v_old_amount, 0) <> 0 THEN
+      INSERT INTO public.account_transactions (
+        vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+      )
+      VALUES (
+        OLD.vendor_id, v_old_account, -v_old_amount, 'reversal', 'sale', OLD.id, OLD.sale_date,
+        'Payment method changed for sale ' || COALESCE(OLD.order_no, '')
+      );
+    END IF;
+
+    IF COALESCE(v_new_amount, 0) <> 0 THEN
+      INSERT INTO public.account_transactions (
+        vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+      )
+      VALUES (
+        NEW.vendor_id, v_new_account, v_new_amount, 'sale_payment', 'sale', NEW.id, NEW.sale_date,
+        'Payment method changed for sale ' || COALESCE(NEW.order_no, '')
+      );
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  IF COALESCE(v_new_amount, 0) <> COALESCE(v_old_amount, 0) THEN
+    INSERT INTO public.account_transactions (
+      vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+    )
+    VALUES (
+      NEW.vendor_id,
+      v_old_account,
+      COALESCE(v_new_amount, 0) - COALESCE(v_old_amount, 0),
+      'sale_payment',
+      'sale',
+      NEW.id,
+      NEW.sale_date,
+      'Sale ' || COALESCE(NEW.order_no, '')
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS sales_record_account_movement ON public.sales;
+CREATE TRIGGER sales_record_account_movement
+  AFTER INSERT OR UPDATE OF total, paid_amount, status, payment_method, sale_date ON public.sales
+  FOR EACH ROW EXECUTE FUNCTION public.sales_record_account_movement();
+
+-- --------------------------------------------------------------------
+-- 5. Record a customer collection
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.record_customer_payment(
+  p_vendor_id uuid,
+  p_customer_id uuid,
+  p_customer_name text,
+  p_allocations jsonb,
+  p_payment_method text DEFAULT 'Cash',
+  p_account_id uuid DEFAULT NULL,
+  p_reference text DEFAULT NULL,
+  p_paid_on date DEFAULT NULL,
+  p_idempotency_key text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+  v_paid_on date := LEAST(COALESCE(p_paid_on, (now() AT TIME ZONE 'Africa/Kampala')::date), (now() AT TIME ZONE 'Africa/Kampala')::date);
+  v_key text := NULLIF(btrim(COALESCE(p_idempotency_key, '')), '');
+  v_allocations jsonb := COALESCE(p_allocations, '[]'::jsonb);
+  v_alloc jsonb;
+  v_sale public.sales%ROWTYPE;
+  v_existing public.settlement_payments%ROWTYPE;
+  v_payment public.settlement_payments%ROWTYPE;
+  v_account public.financial_accounts%ROWTYPE;
+  v_customer_name text := NULLIF(btrim(COALESCE(p_customer_name, '')), '');
+  v_total numeric := 0;
+  v_amount numeric;
+  v_sale_id uuid;
+  v_seen uuid[] := '{}';
+  v_outstanding numeric;
+  v_new_paid numeric;
+  v_new_due numeric;
+  v_reference text;
+  v_balance_after numeric := NULL;
+  v_customer_outstanding numeric := 0;
+  v_allocations_out jsonb := '[]'::jsonb;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF jsonb_typeof(v_allocations) <> 'array' OR jsonb_array_length(v_allocations) = 0 THEN
+    RAISE EXCEPTION 'Select at least one outstanding sale';
+  END IF;
+
+  IF p_customer_id IS NOT NULL THEN
+    SELECT NULLIF(btrim(name), '') INTO v_customer_name
+    FROM public.customers
+    WHERE id = p_customer_id AND vendor_id = p_vendor_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Customer not found';
+    END IF;
+  END IF;
+
+  IF v_customer_name IS NULL THEN
+    RAISE EXCEPTION 'Choose the customer making this payment';
+  END IF;
+
+  IF p_account_id IS NULL THEN
+    RAISE EXCEPTION 'Choose the receiving business account';
+  END IF;
+
+  SELECT * INTO v_account
+  FROM public.financial_accounts
+  WHERE id = p_account_id AND vendor_id = p_vendor_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Receiving account not found';
+  END IF;
+  IF NOT v_account.is_active THEN
+    RAISE EXCEPTION 'Choose an active receiving account';
+  END IF;
+
+  IF v_key IS NULL THEN
+    v_key := gen_random_uuid()::text;
+  END IF;
+
+  -- A retried submit returns the original payment without moving money again.
+  SELECT * INTO v_existing
+  FROM public.settlement_payments
+  WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'payment_id', v_existing.id,
+      'settlement_type', v_existing.settlement_type,
+      'party_name', COALESCE(v_existing.customer_name, v_customer_name),
+      'total', v_existing.amount,
+      'account_name', v_account.name,
+      'account_balance_after', NULL,
+      'customer_outstanding_after', NULL,
+      'allocations', '[]'::jsonb,
+      'duplicate', true
+    );
+  END IF;
+
+  -- First pass: validate each sale, lock it and sum the allocation amounts.
+  FOR v_alloc IN
+    SELECT value FROM jsonb_array_elements(v_allocations) ORDER BY value->>'sale_id'
+  LOOP
+    v_sale_id := NULLIF(v_alloc->>'sale_id', '')::uuid;
+    IF v_sale_id IS NULL THEN
+      RAISE EXCEPTION 'A settlement line is missing its sale';
+    END IF;
+    IF v_sale_id = ANY(v_seen) THEN
+      RAISE EXCEPTION 'A sale can only appear once in a payment';
+    END IF;
+    v_seen := array_append(v_seen, v_sale_id);
+
+    v_amount := ROUND(COALESCE((v_alloc->>'amount')::numeric, 0));
+    IF v_amount <= 0 THEN
+      RAISE EXCEPTION 'Enter a payment amount greater than zero';
+    END IF;
+
+    SELECT * INTO v_sale
+    FROM public.sales
+    WHERE id = v_sale_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'An outstanding sale in this payment no longer exists';
+    END IF;
+    IF v_sale.deleted_at IS NOT NULL OR v_sale.status IN ('cancelled', 'refunded') THEN
+      RAISE EXCEPTION 'This sale is no longer open for payment';
+    END IF;
+    IF p_customer_id IS NOT NULL
+       AND v_sale.customer_id IS NOT NULL
+       AND v_sale.customer_id <> p_customer_id THEN
+      RAISE EXCEPTION 'This sale belongs to a different customer';
+    END IF;
+
+    v_outstanding := GREATEST(0, ROUND(COALESCE(v_sale.total, 0) - COALESCE(v_sale.paid_amount, 0)));
+    IF v_amount > v_outstanding THEN
+      RAISE EXCEPTION
+        'Payment of UGX % is more than the UGX % still owed on sale %',
+        to_char(v_amount, 'FM999G999G999G990'),
+        to_char(v_outstanding, 'FM999G999G999G990'),
+        COALESCE(v_sale.order_no, '');
+    END IF;
+
+    v_total := v_total + v_amount;
+  END LOOP;
+
+  IF v_total <= 0 THEN
+    RAISE EXCEPTION 'Enter a payment amount greater than zero';
+  END IF;
+
+  v_reference := NULLIF(btrim(COALESCE(p_reference, '')), '');
+  IF v_reference IS NOT NULL AND char_length(v_reference) > 120 THEN
+    RAISE EXCEPTION 'Payment reference must be 120 characters or fewer';
+  END IF;
+
+  INSERT INTO public.settlement_payments (
+    vendor_id, settlement_type, customer_id, customer_name, account_id,
+    payment_method, amount, reference, paid_on, idempotency_key
+  )
+  VALUES (
+    p_vendor_id,
+    'customer_collection',
+    p_customer_id,
+    v_customer_name,
+    p_account_id,
+    COALESCE(NULLIF(btrim(p_payment_method), ''), 'Cash'),
+    v_total,
+    v_reference,
+    v_paid_on,
+    v_key
+  )
+  ON CONFLICT (vendor_id, idempotency_key) DO NOTHING
+  RETURNING * INTO v_payment;
+
+  IF v_payment.id IS NULL THEN
+    SELECT * INTO v_existing
+    FROM public.settlement_payments
+    WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+    RETURN jsonb_build_object(
+      'payment_id', v_existing.id,
+      'settlement_type', v_existing.settlement_type,
+      'party_name', COALESCE(v_existing.customer_name, v_customer_name),
+      'total', v_existing.amount,
+      'account_name', v_account.name,
+      'account_balance_after', NULL,
+      'customer_outstanding_after', NULL,
+      'allocations', '[]'::jsonb,
+      'duplicate', true
+    );
+  END IF;
+
+  -- Second pass: write allocations first, then update each sale. The sale
+  -- trigger sees the allocation and does not post the money a second time.
+  FOR v_alloc IN
+    SELECT value FROM jsonb_array_elements(v_allocations) ORDER BY value->>'sale_id'
+  LOOP
+    v_sale_id := NULLIF(v_alloc->>'sale_id', '')::uuid;
+    v_amount := ROUND(COALESCE((v_alloc->>'amount')::numeric, 0));
+
+    SELECT * INTO v_sale
+    FROM public.sales
+    WHERE id = v_sale_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    INSERT INTO public.settlement_allocations (
+      vendor_id, payment_id, sale_id, amount
+    )
+    VALUES (p_vendor_id, v_payment.id, v_sale_id, v_amount);
+
+    v_new_paid := LEAST(
+      COALESCE(v_sale.total, 0),
+      COALESCE(v_sale.paid_amount, 0) + v_amount
+    );
+    v_new_due := GREATEST(0, ROUND(COALESCE(v_sale.total, 0) - v_new_paid));
+
+    UPDATE public.sales
+    SET paid_amount = v_new_paid,
+        due_amount = v_new_due,
+        status = CASE WHEN v_new_due <= 0 THEN 'paid' ELSE 'credit' END,
+        updated_at = now()
+    WHERE id = v_sale_id AND vendor_id = p_vendor_id;
+
+    v_allocations_out := v_allocations_out || jsonb_build_object(
+      'sale_id', v_sale_id,
+      'order_no', v_sale.order_no,
+      'amount', v_amount,
+      'due_after', v_new_due
+    );
+  END LOOP;
+
+  -- Money received increases the selected account exactly once.
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES (
+    p_vendor_id,
+    p_account_id,
+    v_total,
+    'customer_collection',
+    'settlement_payment',
+    v_payment.id,
+    v_paid_on,
+    'Customer payment ' || COALESCE(v_reference, v_customer_name)
+  );
+
+  SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+  INTO v_balance_after
+  FROM public.account_transactions
+  WHERE account_id = p_account_id AND vendor_id = p_vendor_id;
+
+  IF p_customer_id IS NOT NULL THEN
+    SELECT COALESCE(SUM(GREATEST(0, total - paid_amount)), 0)
+    INTO v_customer_outstanding
+    FROM public.sales
+    WHERE vendor_id = p_vendor_id
+      AND customer_id = p_customer_id
+      AND deleted_at IS NULL
+      AND status NOT IN ('cancelled', 'refunded');
+  ELSE
+    SELECT COALESCE(SUM(GREATEST(0, total - paid_amount)), 0)
+    INTO v_customer_outstanding
+    FROM public.sales
+    WHERE vendor_id = p_vendor_id
+      AND customer_id IS NULL
+      AND lower(btrim(COALESCE(customer_name, ''))) = lower(v_customer_name)
+      AND deleted_at IS NULL
+      AND status NOT IN ('cancelled', 'refunded');
+  END IF;
+
+  IF p_customer_id IS NOT NULL THEN
+    UPDATE public.customers
+    SET due_amount = v_customer_outstanding,
+        updated_at = now()
+    WHERE id = p_customer_id AND vendor_id = p_vendor_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'payment_id', v_payment.id,
+    'settlement_type', 'customer_collection',
+    'party_name', v_customer_name,
+    'total', v_total,
+    'account_name', v_account.name,
+    'account_balance_after', v_balance_after,
+    'customer_outstanding_after', v_customer_outstanding,
+    'allocations', v_allocations_out,
+    'duplicate', false
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 6. Record a supplier payment
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.record_supplier_payment(
+  p_vendor_id uuid,
+  p_supplier_name text,
+  p_allocations jsonb,
+  p_account_id uuid DEFAULT NULL,
+  p_reference text DEFAULT NULL,
+  p_paid_on date DEFAULT NULL,
+  p_idempotency_key text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Africa/Kampala')::date;
+  v_paid_on date := LEAST(COALESCE(p_paid_on, (now() AT TIME ZONE 'Africa/Kampala')::date), (now() AT TIME ZONE 'Africa/Kampala')::date);
+  v_key text := NULLIF(btrim(COALESCE(p_idempotency_key, '')), '');
+  v_allocations jsonb := COALESCE(p_allocations, '[]'::jsonb);
+  v_alloc jsonb;
+  v_purchase public.purchases%ROWTYPE;
+  v_existing public.settlement_payments%ROWTYPE;
+  v_payment public.settlement_payments%ROWTYPE;
+  v_account public.financial_accounts%ROWTYPE;
+  v_supplier text := NULLIF(btrim(COALESCE(p_supplier_name, '')), '');
+  v_total numeric := 0;
+  v_amount numeric;
+  v_purchase_id uuid;
+  v_seen uuid[] := '{}';
+  v_outstanding numeric;
+  v_new_paid numeric;
+  v_new_due numeric;
+  v_reference text;
+  v_balance_before numeric := 0;
+  v_balance_after numeric := NULL;
+  v_supplier_outstanding numeric := 0;
+  v_allocations_out jsonb := '[]'::jsonb;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  IF jsonb_typeof(v_allocations) <> 'array' OR jsonb_array_length(v_allocations) = 0 THEN
+    RAISE EXCEPTION 'Select at least one outstanding purchase';
+  END IF;
+
+  IF v_supplier IS NULL THEN
+    RAISE EXCEPTION 'Choose the supplier being paid';
+  END IF;
+
+  IF p_account_id IS NULL THEN
+    RAISE EXCEPTION 'Choose the business account used for this payment';
+  END IF;
+
+  SELECT * INTO v_account
+  FROM public.financial_accounts
+  WHERE id = p_account_id AND vendor_id = p_vendor_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Payment account not found';
+  END IF;
+  IF NOT v_account.is_active THEN
+    RAISE EXCEPTION 'Choose an active payment account';
+  END IF;
+
+  IF v_key IS NULL THEN
+    v_key := gen_random_uuid()::text;
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.settlement_payments
+  WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'payment_id', v_existing.id,
+      'settlement_type', v_existing.settlement_type,
+      'party_name', COALESCE(v_existing.supplier_name, v_supplier),
+      'total', v_existing.amount,
+      'account_name', v_account.name,
+      'account_balance_after', NULL,
+      'supplier_outstanding_after', NULL,
+      'allocations', '[]'::jsonb,
+      'duplicate', true
+    );
+  END IF;
+
+  FOR v_alloc IN
+    SELECT value FROM jsonb_array_elements(v_allocations) ORDER BY value->>'purchase_id'
+  LOOP
+    v_purchase_id := NULLIF(v_alloc->>'purchase_id', '')::uuid;
+    IF v_purchase_id IS NULL THEN
+      RAISE EXCEPTION 'A settlement line is missing its purchase';
+    END IF;
+    IF v_purchase_id = ANY(v_seen) THEN
+      RAISE EXCEPTION 'A purchase can only appear once in a payment';
+    END IF;
+    v_seen := array_append(v_seen, v_purchase_id);
+
+    v_amount := ROUND(COALESCE((v_alloc->>'amount')::numeric, 0));
+    IF v_amount <= 0 THEN
+      RAISE EXCEPTION 'Enter a payment amount greater than zero';
+    END IF;
+
+    SELECT * INTO v_purchase
+    FROM public.purchases
+    WHERE id = v_purchase_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'An outstanding purchase in this payment no longer exists';
+    END IF;
+    IF v_purchase.deleted_at IS NOT NULL THEN
+      RAISE EXCEPTION 'This purchase is no longer open for payment';
+    END IF;
+    IF lower(btrim(COALESCE(v_purchase.supplier_name, 'Unspecified supplier'))) <> lower(v_supplier) THEN
+      RAISE EXCEPTION 'This purchase belongs to a different supplier';
+    END IF;
+
+    v_outstanding := GREATEST(0, ROUND(COALESCE(v_purchase.total_amount, 0) - COALESCE(v_purchase.paid_amount, 0)));
+    IF v_amount > v_outstanding THEN
+      RAISE EXCEPTION
+        'Payment of UGX % is more than the UGX % still owed on purchase %',
+        to_char(v_amount, 'FM999G999G999G990'),
+        to_char(v_outstanding, 'FM999G999G999G990'),
+        COALESCE(v_purchase.reference_no, '');
+    END IF;
+
+    v_total := v_total + v_amount;
+  END LOOP;
+
+  IF v_total <= 0 THEN
+    RAISE EXCEPTION 'Enter a payment amount greater than zero';
+  END IF;
+
+  v_reference := NULLIF(btrim(COALESCE(p_reference, '')), '');
+  IF v_reference IS NOT NULL AND char_length(v_reference) > 120 THEN
+    RAISE EXCEPTION 'Payment reference must be 120 characters or fewer';
+  END IF;
+
+  SELECT COALESCE(v_account.opening_balance, 0) + COALESCE(SUM(amount), 0)
+  INTO v_balance_before
+  FROM public.account_transactions
+  WHERE account_id = p_account_id AND vendor_id = p_vendor_id;
+
+  IF v_balance_before < v_total THEN
+    RAISE EXCEPTION
+      'Not enough money in %. Available: UGX %',
+      v_account.name,
+      to_char(v_balance_before, 'FM999G999G999G990');
+  END IF;
+
+  INSERT INTO public.settlement_payments (
+    vendor_id, settlement_type, supplier_name, account_id,
+    payment_method, amount, reference, paid_on, idempotency_key
+  )
+  VALUES (
+    p_vendor_id,
+    'supplier_payment',
+    v_supplier,
+    p_account_id,
+    NULL,
+    v_total,
+    v_reference,
+    v_paid_on,
+    v_key
+  )
+  ON CONFLICT (vendor_id, idempotency_key) DO NOTHING
+  RETURNING * INTO v_payment;
+
+  IF v_payment.id IS NULL THEN
+    SELECT * INTO v_existing
+    FROM public.settlement_payments
+    WHERE vendor_id = p_vendor_id AND idempotency_key = v_key;
+
+    RETURN jsonb_build_object(
+      'payment_id', v_existing.id,
+      'settlement_type', v_existing.settlement_type,
+      'party_name', COALESCE(v_existing.supplier_name, v_supplier),
+      'total', v_existing.amount,
+      'account_name', v_account.name,
+      'account_balance_after', NULL,
+      'supplier_outstanding_after', NULL,
+      'allocations', '[]'::jsonb,
+      'duplicate', true
+    );
+  END IF;
+
+  FOR v_alloc IN
+    SELECT value FROM jsonb_array_elements(v_allocations) ORDER BY value->>'purchase_id'
+  LOOP
+    v_purchase_id := NULLIF(v_alloc->>'purchase_id', '')::uuid;
+    v_amount := ROUND(COALESCE((v_alloc->>'amount')::numeric, 0));
+
+    SELECT * INTO v_purchase
+    FROM public.purchases
+    WHERE id = v_purchase_id AND vendor_id = p_vendor_id
+    FOR UPDATE;
+
+    INSERT INTO public.settlement_allocations (
+      vendor_id, payment_id, purchase_id, amount
+    )
+    VALUES (p_vendor_id, v_payment.id, v_purchase_id, v_amount);
+
+    v_new_paid := LEAST(
+      COALESCE(v_purchase.total_amount, 0),
+      COALESCE(v_purchase.paid_amount, 0) + v_amount
+    );
+    v_new_due := GREATEST(0, ROUND(COALESCE(v_purchase.total_amount, 0) - v_new_paid));
+
+    UPDATE public.purchases
+    SET paid_amount = v_new_paid,
+        due_amount = v_new_due,
+        updated_at = now()
+    WHERE id = v_purchase_id AND vendor_id = p_vendor_id;
+
+    v_allocations_out := v_allocations_out || jsonb_build_object(
+      'purchase_id', v_purchase_id,
+      'reference_no', v_purchase.reference_no,
+      'amount', v_amount,
+      'due_after', v_new_due
+    );
+  END LOOP;
+
+  -- Money paid leaves the selected account exactly once. No expense entry is
+  -- written because the stock purchase was already recorded.
+  INSERT INTO public.account_transactions (
+    vendor_id, account_id, amount, kind, source_type, source_id, occurred_on, notes
+  )
+  VALUES (
+    p_vendor_id,
+    p_account_id,
+    -v_total,
+    'supplier_payment',
+    'settlement_payment',
+    v_payment.id,
+    v_paid_on,
+    'Supplier payment ' || COALESCE(v_reference, v_supplier)
+  );
+
+  SELECT v_account.opening_balance + COALESCE(SUM(amount), 0)
+  INTO v_balance_after
+  FROM public.account_transactions
+  WHERE account_id = p_account_id AND vendor_id = p_vendor_id;
+
+  SELECT COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0)
+  INTO v_supplier_outstanding
+  FROM public.purchases
+  WHERE vendor_id = p_vendor_id
+    AND lower(btrim(COALESCE(supplier_name, 'Unspecified supplier'))) = lower(v_supplier)
+    AND deleted_at IS NULL;
+
+  RETURN jsonb_build_object(
+    'payment_id', v_payment.id,
+    'settlement_type', 'supplier_payment',
+    'party_name', v_supplier,
+    'total', v_total,
+    'account_name', v_account.name,
+    'account_balance_after', v_balance_after,
+    'supplier_outstanding_after', v_supplier_outstanding,
+    'allocations', v_allocations_out,
+    'duplicate', false
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 7. Settlements overview for the screen
+-- --------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.vendor_settlements_overview(
+  p_vendor_id uuid,
+  p_history_limit integer DEFAULT 300
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_limit integer := LEAST(GREATEST(COALESCE(p_history_limit, 300), 1), 1000);
+  v_customer_collections jsonb := '[]'::jsonb;
+  v_customer_sales jsonb := '[]'::jsonb;
+  v_supplier_payables jsonb := '[]'::jsonb;
+  v_supplier_purchases jsonb := '[]'::jsonb;
+  v_history jsonb := '[]'::jsonb;
+  v_customer_outstanding numeric := 0;
+  v_supplier_outstanding numeric := 0;
+BEGIN
+  PERFORM public.assert_vendor_owner(p_vendor_id);
+
+  WITH open_sales AS (
+    SELECT
+      s.id,
+      s.order_no,
+      s.customer_id,
+      CASE
+        WHEN s.customer_id IS NOT NULL THEN 'id:' || s.customer_id::text
+        ELSE 'name:' || lower(btrim(COALESCE(NULLIF(s.customer_name, ''), NULLIF(c.name, ''), 'Walk-in customer')))
+      END AS customer_key,
+      COALESCE(NULLIF(btrim(s.customer_name), ''), NULLIF(btrim(c.name), ''), 'Walk-in customer') AS customer_name,
+      COALESCE(NULLIF(btrim(s.customer_phone), ''), NULLIF(btrim(c.phone), ''), '') AS customer_phone,
+      s.sale_date,
+      s.total,
+      s.paid_amount,
+      GREATEST(0, ROUND(COALESCE(s.total, 0) - COALESCE(s.paid_amount, 0))) AS outstanding,
+      s.status,
+      (
+        SELECT MAX(p.paid_on)
+        FROM public.settlement_payments p
+        WHERE p.vendor_id = p_vendor_id
+          AND p.settlement_type = 'customer_collection'
+          AND (
+            (s.customer_id IS NOT NULL AND p.customer_id = s.customer_id)
+            OR (
+              s.customer_id IS NULL
+              AND lower(btrim(COALESCE(p.customer_name, ''))) =
+                lower(btrim(COALESCE(NULLIF(s.customer_name, ''), NULLIF(c.name, ''), 'Walk-in customer')))
+            )
+          )
+      ) AS last_payment_date
+    FROM public.sales s
+    LEFT JOIN public.customers c ON c.id = s.customer_id AND c.vendor_id = s.vendor_id
+    WHERE s.vendor_id = p_vendor_id
+      AND s.deleted_at IS NULL
+      AND s.status NOT IN ('cancelled', 'refunded')
+      AND GREATEST(0, ROUND(COALESCE(s.total, 0) - COALESCE(s.paid_amount, 0))) > 0
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'customer_key', rows.customer_key,
+        'customer_id', rows.customer_id,
+        'customer_name', rows.customer_name,
+        'customer_phone', rows.customer_phone,
+        'outstanding', rows.outstanding,
+        'sale_count', rows.sale_count,
+        'oldest_sale_date', rows.oldest_sale_date,
+        'last_payment_date', rows.last_payment_date
+      ) ORDER BY rows.outstanding DESC, rows.customer_name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_customer_collections
+  FROM (
+    SELECT
+      customer_key,
+      (array_agg(customer_id) FILTER (WHERE customer_id IS NOT NULL))[1] AS customer_id,
+      MAX(customer_name) AS customer_name,
+      MAX(customer_phone) AS customer_phone,
+      SUM(outstanding) AS outstanding,
+      COUNT(*)::integer AS sale_count,
+      MIN(sale_date) AS oldest_sale_date,
+      MAX(last_payment_date) AS last_payment_date
+    FROM open_sales
+    GROUP BY customer_key
+  ) rows;
+
+  WITH open_sales AS (
+    SELECT
+      s.id,
+      s.order_no,
+      s.customer_id,
+      CASE
+        WHEN s.customer_id IS NOT NULL THEN 'id:' || s.customer_id::text
+        ELSE 'name:' || lower(btrim(COALESCE(NULLIF(s.customer_name, ''), NULLIF(c.name, ''), 'Walk-in customer')))
+      END AS customer_key,
+      COALESCE(NULLIF(btrim(s.customer_name), ''), NULLIF(btrim(c.name), ''), 'Walk-in customer') AS customer_name,
+      COALESCE(NULLIF(btrim(s.customer_phone), ''), NULLIF(btrim(c.phone), ''), '') AS customer_phone,
+      s.sale_date,
+      s.total,
+      s.paid_amount,
+      GREATEST(0, ROUND(COALESCE(s.total, 0) - COALESCE(s.paid_amount, 0))) AS outstanding,
+      s.status,
+      s.created_at
+    FROM public.sales s
+    LEFT JOIN public.customers c ON c.id = s.customer_id AND c.vendor_id = s.vendor_id
+    WHERE s.vendor_id = p_vendor_id
+      AND s.deleted_at IS NULL
+      AND s.status NOT IN ('cancelled', 'refunded')
+      AND GREATEST(0, ROUND(COALESCE(s.total, 0) - COALESCE(s.paid_amount, 0))) > 0
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', r.id,
+        'order_no', r.order_no,
+        'customer_id', r.customer_id,
+        'customer_key', r.customer_key,
+        'customer_name', r.customer_name,
+        'customer_phone', r.customer_phone,
+        'sale_date', r.sale_date,
+        'total', r.total,
+        'paid_amount', r.paid_amount,
+        'due_amount', r.outstanding,
+        'status', r.status
+      ) ORDER BY r.sale_date, r.created_at
+    ),
+    '[]'::jsonb
+  )
+  INTO v_customer_sales
+  FROM open_sales r;
+
+  WITH open_purchases AS (
+    SELECT
+      p.id,
+      p.reference_no,
+      COALESCE(NULLIF(btrim(p.supplier_name), ''), 'Unspecified supplier') AS supplier_name,
+      p.purchase_date,
+      p.total_amount,
+      p.paid_amount,
+      GREATEST(0, ROUND(COALESCE(p.total_amount, 0) - COALESCE(p.paid_amount, 0))) AS outstanding,
+      p.notes,
+      p.created_at,
+      (
+        SELECT MAX(sp.paid_on)
+        FROM public.settlement_payments sp
+        WHERE sp.vendor_id = p_vendor_id
+          AND sp.settlement_type = 'supplier_payment'
+          AND lower(btrim(COALESCE(sp.supplier_name, ''))) =
+            lower(btrim(COALESCE(p.supplier_name, 'Unspecified supplier')))
+      ) AS last_payment_date
+    FROM public.purchases p
+    WHERE p.vendor_id = p_vendor_id
+      AND p.deleted_at IS NULL
+      AND GREATEST(0, ROUND(COALESCE(p.total_amount, 0) - COALESCE(p.paid_amount, 0))) > 0
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'supplier_key', rows.supplier_key,
+        'supplier_name', rows.supplier_name,
+        'outstanding', rows.outstanding,
+        'purchase_count', rows.purchase_count,
+        'oldest_purchase_date', rows.oldest_purchase_date,
+        'last_payment_date', rows.last_payment_date
+      ) ORDER BY rows.outstanding DESC, rows.supplier_name
+    ),
+    '[]'::jsonb
+  )
+  INTO v_supplier_payables
+  FROM (
+    SELECT
+      lower(supplier_name) AS supplier_key,
+      MIN(supplier_name) AS supplier_name,
+      SUM(outstanding) AS outstanding,
+      COUNT(*)::integer AS purchase_count,
+      MIN(purchase_date) AS oldest_purchase_date,
+      MAX(last_payment_date) AS last_payment_date
+    FROM open_purchases
+    GROUP BY lower(supplier_name)
+  ) rows;
+
+  WITH open_purchases AS (
+    SELECT
+      p.id,
+      p.reference_no,
+      COALESCE(NULLIF(btrim(p.supplier_name), ''), 'Unspecified supplier') AS supplier_name,
+      p.purchase_date,
+      p.total_amount,
+      p.paid_amount,
+      GREATEST(0, ROUND(COALESCE(p.total_amount, 0) - COALESCE(p.paid_amount, 0))) AS outstanding,
+      p.notes,
+      p.created_at
+    FROM public.purchases p
+    WHERE p.vendor_id = p_vendor_id
+      AND p.deleted_at IS NULL
+      AND GREATEST(0, ROUND(COALESCE(p.total_amount, 0) - COALESCE(p.paid_amount, 0))) > 0
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', r.id,
+        'reference_no', r.reference_no,
+        'supplier_key', lower(r.supplier_name),
+        'supplier_name', r.supplier_name,
+        'purchase_date', r.purchase_date,
+        'total_amount', r.total_amount,
+        'paid_amount', r.paid_amount,
+        'due_amount', r.outstanding,
+        'notes', r.notes
+      ) ORDER BY r.purchase_date, r.created_at
+    ),
+    '[]'::jsonb
+  )
+  INTO v_supplier_purchases
+  FROM open_purchases r;
+
+  SELECT COALESCE(SUM(GREATEST(0, total - paid_amount)), 0)
+  INTO v_customer_outstanding
+  FROM public.sales
+  WHERE vendor_id = p_vendor_id
+    AND deleted_at IS NULL
+    AND status NOT IN ('cancelled', 'refunded');
+
+  SELECT COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0)
+  INTO v_supplier_outstanding
+  FROM public.purchases
+  WHERE vendor_id = p_vendor_id AND deleted_at IS NULL;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', h.id,
+        'settlement_type', h.settlement_type,
+        'customer_id', h.customer_id,
+        'party_name', h.party_name,
+        'amount', h.amount,
+        'payment_method', h.payment_method,
+        'account_id', h.account_id,
+        'account_name', h.account_name,
+        'reference', h.reference,
+        'paid_on', h.paid_on,
+        'created_at', h.created_at,
+        'status', 'completed',
+        'allocations', h.allocations
+      ) ORDER BY h.paid_on DESC, h.created_at DESC
+    ),
+    '[]'::jsonb
+  )
+  INTO v_history
+  FROM (
+    SELECT
+      p.id,
+      p.settlement_type,
+      p.customer_id,
+      COALESCE(p.customer_name, p.supplier_name, c.name, 'Customer') AS party_name,
+      p.amount,
+      p.payment_method,
+      p.account_id,
+      a.name AS account_name,
+      p.reference,
+      p.paid_on,
+      p.created_at,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'sale_id', al.sale_id,
+            'purchase_id', al.purchase_id,
+            'reference_no', COALESCE(s.order_no, pu.reference_no),
+            'amount', al.amount
+          ) ORDER BY al.created_at
+        )
+        FROM public.settlement_allocations al
+        LEFT JOIN public.sales s ON s.id = al.sale_id
+        LEFT JOIN public.purchases pu ON pu.id = al.purchase_id
+        WHERE al.payment_id = p.id
+      ), '[]'::jsonb) AS allocations
+    FROM public.settlement_payments p
+    LEFT JOIN public.financial_accounts a ON a.id = p.account_id
+    LEFT JOIN public.customers c ON c.id = p.customer_id
+    WHERE p.vendor_id = p_vendor_id
+    ORDER BY p.paid_on DESC, p.created_at DESC
+    LIMIT v_limit
+  ) h;
+
+  RETURN jsonb_build_object(
+    'customer_collections', v_customer_collections,
+    'customer_sales', v_customer_sales,
+    'supplier_payables', v_supplier_payables,
+    'supplier_purchases', v_supplier_purchases,
+    'history', v_history,
+    'customer_outstanding', v_customer_outstanding,
+    'supplier_outstanding', v_supplier_outstanding
+  );
+END;
+$$;
+
+-- --------------------------------------------------------------------
+-- 8. Permissions
+-- --------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.record_customer_payment(uuid, uuid, text, jsonb, text, uuid, text, date, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_customer_payment(uuid, uuid, text, jsonb, text, uuid, text, date, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.record_supplier_payment(uuid, text, jsonb, uuid, text, date, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_supplier_payment(uuid, text, jsonb, uuid, text, date, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.vendor_settlements_overview(uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.vendor_settlements_overview(uuid, integer) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
